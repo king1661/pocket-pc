@@ -1,0 +1,470 @@
+<!doctype html>
+<html lang="en" data-couch-home data-couch-noring>
+<head>
+<meta charset="utf-8">
+<title>Lounge</title>
+<link rel="icon" href="data:,">
+<style>
+  /* 1rem = 16px on a 1920-wide screen; everything scales with the screen width. */
+  :root {
+    font-size: calc(100vw / 120);
+    --bg: #070708;
+    --text: #fff; --dim: rgba(255,255,255,.66); --faint: rgba(255,255,255,.4);
+    --graphite: rgba(58,58,62,.72); --graphite-hi: rgba(84,84,90,.86); --hair: rgba(255,255,255,.1);
+    --green: #30D158; --red: #FF453A;
+    --display: "Inter Display", "Inter", system-ui, sans-serif;
+    --ui: "Inter", system-ui, sans-serif;
+    --ease: cubic-bezier(.2,.9,.25,1);
+    --side: 6rem;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: var(--ui);
+    -webkit-font-smoothing: antialiased; }
+  a { color: inherit; text-decoration: none; -webkit-tap-highlight-color: transparent; }
+  a, button { outline: none; }
+
+  /* ---------- Backdrop ---------- */
+  .backdrop { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+  .backdrop img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0;
+    transition: opacity 1.4s ease; }
+  .backdrop img.on { opacity: 1; }
+  /* Show art sits to the right; the left and bottom fade to near-black for the type. */
+  #art { left: 22%; width: 78%; object-position: center 30%; }
+  #land { animation: drift 70s ease-in-out infinite alternate; transform-origin: 60% 40%; }
+  @keyframes drift { from { transform: scale(1.04) translate(0, 0); } to { transform: scale(1.16) translate(-2.5%, -1.5%); } }
+  .shade { position: absolute; inset: 0; }
+  .shade.left { background: linear-gradient(90deg, var(--bg) 0%, var(--bg) 20%, rgba(7,7,8,.9) 32%, rgba(7,7,8,.45) 52%, rgba(7,7,8,0) 72%); }
+  .shade.bottom { background: linear-gradient(0deg, var(--bg) 0%, var(--bg) 30%, rgba(7,7,8,.82) 48%, rgba(7,7,8,0) 74%); }
+  .shade.top { background: linear-gradient(180deg, rgba(7,7,8,.7) 0%, rgba(7,7,8,0) 22%); }
+  body.empty .shade.left { background: linear-gradient(90deg, rgba(7,7,8,.82) 0%, rgba(7,7,8,.45) 40%, rgba(7,7,8,0) 70%); }
+  body.empty .shade.bottom { background: linear-gradient(0deg, var(--bg) 0%, rgba(7,7,8,.92) 26%, rgba(7,7,8,.35) 52%, rgba(7,7,8,0) 70%); }
+
+  /* ---------- Layout ---------- */
+  .page { position: relative; z-index: 1; height: 100%; display: flex; flex-direction: column;
+    padding: 3.25rem 0 2rem; }
+  header { display: flex; align-items: flex-start; justify-content: space-between; padding: 0 var(--side); }
+  .wordmark { font: 700 1.9rem/1 var(--display); letter-spacing: -.035em; }
+  .status { text-align: right; }
+  .time { font: 600 2.4rem/1 var(--display); letter-spacing: -.035em; font-variant-numeric: tabular-nums; }
+  .sub { margin-top: .6rem; display: flex; justify-content: flex-end; align-items: center; gap: .75rem;
+    font: 500 1rem/1 var(--ui); color: var(--dim); }
+  .sub .sep { width: 3px; height: 3px; border-radius: 50%; background: var(--faint); }
+  #phonePill { display: inline-flex; align-items: center; gap: .5rem; color: var(--faint); transition: color .4s; }
+  #phonePill i { width: .55rem; height: .55rem; border-radius: 50%; background: rgba(255,255,255,.3); transition: background .4s; }
+  #phonePill.on { color: var(--dim); }
+  #phonePill.on i { background: var(--green); box-shadow: 0 0 .5rem rgba(48,209,88,.6); }
+
+  /* ---------- Hero ---------- */
+  .hero { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: flex-end;
+    padding: 0 var(--side) 3rem; max-width: 72rem; }
+  .svc { display: flex; align-items: center; gap: .8rem; margin-bottom: 1.1rem;
+    font: 600 1.05rem/1 var(--ui); letter-spacing: .14em; text-transform: uppercase; color: rgba(255,255,255,.82); }
+  .svc img { width: 2.25rem; height: 2.25rem; border-radius: 22%; box-shadow: 0 .3rem 1rem rgba(0,0,0,.5); }
+  .title { font: 800 7rem/.94 var(--display); letter-spacing: -.045em; text-wrap: balance;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; padding-bottom: .08em;
+    text-shadow: 0 .2rem 2rem rgba(0,0,0,.35); }
+  .title.long { font-size: 5.25rem; }
+  .title.xlong { font-size: 4.1rem; }
+  .epi { margin-top: 1rem; font: 500 1.6rem/1.25 var(--ui); letter-spacing: -.01em; color: var(--dim);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .prog { margin-top: 1.5rem; display: flex; align-items: center; gap: 1.1rem; font: 500 1.05rem/1 var(--ui); color: var(--dim);
+    font-variant-numeric: tabular-nums; }
+  .bar { position: relative; width: 20rem; height: 4px; border-radius: 4px; background: rgba(255,255,255,.22); overflow: hidden; }
+  .bar i { position: absolute; inset: 0 auto 0 0; background: #fff; border-radius: inherit; }
+  .greet { font: 700 6.25rem/1 var(--display); letter-spacing: -.045em; }
+  .greetSub { margin-top: 1.1rem; font: 500 1.6rem/1.3 var(--ui); color: var(--dim); letter-spacing: -.01em; }
+  .actions { display: flex; gap: 1rem; margin-top: 2.25rem; }
+
+  /* Pills: white primary, graphite secondary. */
+  .btn { display: inline-flex; align-items: center; gap: .7rem; height: 3.6rem; padding: 0 1.9rem; border: 0; border-radius: 999px;
+    font: 600 1.3rem/1 var(--ui); letter-spacing: -.01em; color: #fff; cursor: pointer; white-space: nowrap;
+    background: var(--graphite); -webkit-backdrop-filter: blur(24px) saturate(140%); backdrop-filter: blur(24px) saturate(140%);
+    box-shadow: inset 0 0 0 1px var(--hair);
+    transition: transform .28s var(--ease), background .2s, color .2s, box-shadow .28s, outline-color .2s; }
+  .btn svg { width: 1.35rem; height: 1.35rem; flex: none; }
+  .btn.primary { background: #fff; color: #000; box-shadow: none; }
+  .btn.small { height: 2.75rem; padding: 0 1.3rem; gap: .55rem; font: 500 1rem/1 var(--ui); color: rgba(255,255,255,.85); }
+  .btn.small svg { width: 1.1rem; height: 1.1rem; }
+  .btn.armed { background: var(--red); color: #fff; box-shadow: none; }
+
+  /* ---------- Rows ---------- */
+  .row { padding: 0 var(--side); }
+  .row h3 { font: 600 1.35rem/1 var(--display); letter-spacing: -.015em; color: rgba(255,255,255,.9); margin-bottom: 1rem; }
+  .row h3 small { font: 500 1rem/1 var(--ui); color: var(--faint); margin-left: .7rem; letter-spacing: 0; }
+  /* The strip scrolls sideways under script control; padding leaves room for the focus scale and ring. */
+  .strip { display: flex; gap: 1.5rem; overflow: hidden; margin: -1.4rem calc(-1 * var(--side)); padding: 1.4rem var(--side); }
+  #cw[hidden] { display: none; }
+  .card { position: relative; flex: none; width: 21.5rem; aspect-ratio: 16 / 9; border-radius: .9rem; overflow: hidden;
+    background: #1b1b1e; box-shadow: 0 .6rem 1.6rem rgba(0,0,0,.45);
+    transition: transform .3s var(--ease), box-shadow .3s, outline-color .2s; }
+  .card img.art { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .card::after { content: ""; position: absolute; inset: 0;
+    background: linear-gradient(0deg, rgba(0,0,0,.88) 0%, rgba(0,0,0,.45) 34%, rgba(0,0,0,0) 62%); }
+  .card .meta { position: absolute; left: 1.1rem; right: 1.1rem; bottom: .95rem; z-index: 1; }
+  .card .ct { font: 700 1.25rem/1.15 var(--display); letter-spacing: -.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card .cs { margin-top: .25rem; font: 500 .88rem/1.2 var(--ui); color: rgba(255,255,255,.7); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card .bar { width: 100%; height: 3px; margin-top: .7rem; }
+  .card .badge { position: absolute; left: .8rem; top: .8rem; z-index: 1; width: 1.8rem; height: 1.8rem; border-radius: 22%;
+    box-shadow: 0 .2rem .6rem rgba(0,0,0,.5); }
+  .card .noart { position: absolute; inset: 0; display: grid; place-items: center; background: linear-gradient(135deg, #26262b, #121214); }
+  .card .noart img { width: 4.5rem; height: 4.5rem; border-radius: 22%; opacity: .9; }
+
+  .bottom { display: flex; align-items: flex-end; gap: 2.5rem; padding: 0 var(--side); margin-top: 2rem; }
+  .bottom .row { padding: 0; }
+  .apps { display: flex; gap: 2rem; }
+  .apps { padding-bottom: 2.6rem; }
+  .app { position: relative; display: block; width: 6.5rem; }
+  .app .ic { display: block; width: 6.5rem; height: 6.5rem; border-radius: 22%; overflow: hidden;
+    box-shadow: 0 .5rem 1.4rem rgba(0,0,0,.5), inset 0 0 0 1px rgba(255,255,255,.06);
+    transition: transform .3s var(--ease), box-shadow .3s, outline-color .2s; }
+  .app .ic img { display: block; width: 100%; height: 100%; object-fit: cover; }
+  .app .name { position: absolute; left: -2rem; right: -2rem; top: 100%; margin-top: 1.45rem; text-align: center; font: 600 1rem/1.1 var(--ui); white-space: nowrap; opacity: 0; transform: translateY(-.3rem);
+    transition: opacity .2s, transform .3s var(--ease); }
+  .tools { display: flex; align-items: center; gap: .8rem; height: 6.5rem; margin-bottom: 2.6rem; padding-left: 2.5rem; position: relative; }
+  .tools::before { content: ""; position: absolute; left: 0; top: 1.2rem; bottom: 1.2rem; width: 1px; background: rgba(255,255,255,.16); }
+  body.empty .tools { height: 8.5rem; }
+
+  /* Empty: bigger icons, no Continue watching. */
+  body.empty .hero { padding-bottom: 4rem; }
+  body.empty .app, body.empty .app .ic { width: 8.5rem; }
+  body.empty .app .ic { height: 8.5rem; }
+  body.empty .apps { gap: 2.5rem; }
+
+  /* ---------- Focus: scale up, crisp white ring, soft shadow ---------- */
+  .card:focus, .app:focus .ic { transform: scale(1.08); outline: 3px solid #fff; outline-offset: 4px;
+    box-shadow: 0 1.6rem 3rem rgba(0,0,0,.7); }
+  .card { outline: 3px solid transparent; outline-offset: 4px; }
+  .app .ic { outline: 3px solid transparent; outline-offset: 4px; }
+  .app:focus .name { opacity: 1; transform: none; }
+  .btn { outline: 3px solid transparent; outline-offset: 4px; }
+  .btn:focus { transform: scale(1.06); outline-color: #fff; box-shadow: 0 1rem 2.4rem rgba(0,0,0,.6); }
+  .btn:not(.primary):not(.armed):focus { background: var(--graphite-hi); color: #fff; }
+  #pairBig .btn:focus { background: #fff; color: #000; }
+
+  /* ---------- Pairing ---------- */
+  #pairCard { position: fixed; z-index: 2; right: var(--side); top: 9.5rem; display: flex; gap: 1.2rem; align-items: center;
+    padding: 1rem 1.5rem 1rem 1rem; border-radius: 1.3rem;
+    background: rgba(22,22,25,.78); -webkit-backdrop-filter: blur(30px) saturate(140%); backdrop-filter: blur(30px) saturate(140%);
+    box-shadow: inset 0 0 0 1px var(--hair), 0 1.5rem 3rem rgba(0,0,0,.45); transition: opacity .4s, transform .4s; }
+  body.paired #pairCard { opacity: 0; transform: translateY(-.8rem); pointer-events: none; }
+  .qr { background: #fff; }
+  .qr svg { width: 100%; height: 100%; display: block; }
+  #pairCard .qr { width: 7.5rem; height: 7.5rem; border-radius: .8rem; padding: .45rem; }
+  #pairCard h2 { font: 700 1.25rem/1.2 var(--display); letter-spacing: -.02em; margin-bottom: .4rem; }
+  #pairCard p { font-size: .95rem; color: var(--dim); line-height: 1.55; }
+  #pairCard b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  #pairBig { position: fixed; inset: 0; z-index: 10; display: none; place-items: center;
+    background: rgba(7,7,8,.78); -webkit-backdrop-filter: blur(40px) saturate(120%); backdrop-filter: blur(40px) saturate(120%); }
+  #pairBig.open { display: grid; animation: fadein .35s ease; }
+  @keyframes fadein { from { opacity: 0; } }
+  #pairBig .box { display: flex; gap: 5rem; align-items: center; }
+  #pairBig .qr { width: 25rem; height: 25rem; border-radius: 2rem; padding: 1.5rem; box-shadow: 0 2rem 5rem rgba(0,0,0,.6); }
+  #pairBig h2 { font: 800 4.5rem/1 var(--display); letter-spacing: -.045em; margin-bottom: 1.2rem; }
+  #pairBig p { font-size: 1.45rem; color: var(--dim); line-height: 1.5; margin-bottom: 2.4rem; max-width: 36rem; }
+  #pairBig .codes { display: flex; gap: 1rem; margin-bottom: 2.8rem; }
+  #pairBig .codes > div { padding: 1.1rem 1.6rem; border-radius: 1.1rem; background: rgba(255,255,255,.07); box-shadow: inset 0 0 0 1px var(--hair); }
+  #pairBig .codes span { display: block; font: 600 .85rem/1 var(--ui); letter-spacing: .12em; text-transform: uppercase;
+    color: var(--faint); margin-bottom: .6rem; }
+  #pairBig .codes b { font: 700 2.6rem/1 var(--display); letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  #pairBig .codes b.big { letter-spacing: .05em; }
+</style>
+</head>
+<body class="empty">
+  <div class="backdrop">
+    <img id="land" alt="">
+    <img id="art" alt="">
+    <div class="shade top"></div><div class="shade left"></div><div class="shade bottom"></div>
+  </div>
+
+  <div class="page">
+    <header>
+      <div class="wordmark">Lounge</div>
+      <div class="status">
+        <div class="time" id="time"></div>
+        <div class="sub"><span id="date"></span><i class="sep"></i><span id="phonePill"><i></i><span id="phoneText">No remote</span></span></div>
+      </div>
+    </header>
+
+    <section class="hero" id="hero">
+      <div id="heroFull" hidden>
+        <div class="svc"><img id="hSvcIcon" alt=""><span id="hSvc"></span></div>
+        <h1 class="title" id="hTitle"></h1>
+        <div class="epi" id="hSub"></div>
+        <div class="prog" id="hProg"><span class="bar"><i id="hBar"></i></span><span id="hLeft"></span></div>
+        <div class="actions">
+          <a class="btn primary" id="resume"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M7 4.8v14.4c0 .8.9 1.3 1.6.9l11.3-7.2c.6-.4.6-1.3 0-1.7L8.6 3.9C7.9 3.5 7 4 7 4.8z"/></svg>Resume</a>
+          <a class="btn" id="openSvc"></a>
+        </div>
+      </div>
+      <div id="heroEmpty">
+        <h1 class="greet" id="greet">Good evening</h1>
+        <div class="greetSub">Pick something to watch.</div>
+      </div>
+    </section>
+
+    <section class="row" id="cw" hidden>
+      <h3>Continue watching</h3>
+      <div class="strip" id="cwStrip"></div>
+    </section>
+
+    <div class="bottom">
+      <section class="row">
+        <h3>Apps</h3>
+        <div class="apps" id="apps"></div>
+      </section>
+      <div class="tools">
+        <button class="btn small" id="pairBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6.5" y="2.5" width="11" height="19" rx="2.5"/><path d="M11 18h2"/></svg>Pair a phone</button>
+        <button class="btn small" id="powerBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v8"/><path d="M6.3 6.6a8 8 0 1 0 11.4 0"/></svg><span>Turn off TV</span></button>
+      </div>
+    </div>
+  </div>
+
+  <div id="pairCard">
+    <div class="qr">{{QR}}</div>
+    <div><h2>Use your phone as the remote</h2><p>Scan it in the Lounge app, or enter<br>PC <b class="addr">{{IP}}</b> · code <b class="pin">······</b></p></div>
+  </div>
+
+  <div id="pairBig">
+    <div class="box">
+      <div class="qr">{{QR}}</div>
+      <div>
+        <h2>Pair a phone</h2>
+        <p>In the Lounge app, tap “Scan QR code”. Or choose “Enter code” and type:</p>
+        <div class="codes"><div><span>PC</span><b class="addr">{{IP}}</b></div><div><span>Code</span><b class="pin big">······</b></div></div>
+        <button class="btn primary" id="pairDone">Done</button>
+      </div>
+    </div>
+  </div>
+
+<script src="/couch.js"></script>
+<script>
+  const $ = (s) => document.querySelector(s);
+  const h = (tag, cls, text) => {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  };
+
+  // The five services: host suffix, name, icon, home page.
+  const SERVICES = [
+    ['netflix.com', 'Netflix', '/icons/netflix.jpg', 'https://www.netflix.com/browse'],
+    ['hulu.com', 'Hulu', '/icons/hulu.jpg', 'https://www.hulu.com/hub/home'],
+    ['paramountplus.com', 'Paramount+', '/icons/paramount.jpg', 'https://www.paramountplus.com/home/'],
+    ['disneyplus.com', 'Disney+', '/icons/disney.jpg', 'https://www.disneyplus.com/home'],
+    ['youtube.com', 'YouTube', '/icons/youtube.jpg', 'https://www.youtube.com/'],
+  ].map(([host, name, icon, home]) => ({ host, name, icon, home }));
+  const svcFor = (host) => SERVICES.find((s) => host === s.host || host.endsWith('.' + s.host));
+  // A link we're willing to open: https on one of the five services.
+  function safeUrl(u) {
+    try {
+      const x = new URL(u);
+      return x.protocol === 'https:' && svcFor(x.hostname) ? x.href : null;
+    } catch { return null; }
+  }
+  // Artwork: an https URL, or a frame the server captured (/art/<key>.jpg).
+  function safeArt(a) {
+    if (typeof a !== 'string' || !a) return '';
+    if (/^\/art\/[A-Za-z0-9]+\.jpg$/.test(a)) return a;
+    try { return new URL(a).protocol === 'https:' ? a : ''; } catch { return ''; }
+  }
+  function left(r) {
+    const s = Math.max(0, (r.d || 0) - (r.t || 0)), m = Math.max(1, Math.round(s / 60));
+    return m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min left` : `${m} min left`;
+  }
+  const pct = (r) => (r.d > 0 ? Math.min(100, Math.max(2, (r.t / r.d) * 100)) : 0);
+
+  // ---------- Clock ----------
+  const timeFmt = new Intl.DateTimeFormat([], { hour: 'numeric', minute: '2-digit' });
+  const hm = (d) => timeFmt.formatToParts(d).filter((p) => p.type !== 'dayPeriod').map((p) => p.value).join('').trim();
+  function tick() {
+    const d = new Date(), hr = d.getHours();
+    $('#time').textContent = hm(d);
+    $('#date').textContent = d.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
+    $('#greet').textContent = hr < 5 ? 'Good night' : hr < 12 ? 'Good morning' : hr < 18 ? 'Good afternoon' : 'Good evening';
+  }
+  tick(); setInterval(tick, 1000);
+
+  // ---------- Apps ----------
+  for (const s of SERVICES) {
+    const a = h('a', 'app');
+    a.href = s.home;
+    const ic = h('span', 'ic'), img = h('img');
+    img.src = s.icon; img.alt = '';
+    ic.appendChild(img);
+    a.append(ic, h('span', 'name', s.name));
+    $('#apps').appendChild(a);
+  }
+
+  // ---------- Landscape for the empty state ----------
+  let landSet = false;
+  async function landscape() {
+    if (landSet) return;
+    landSet = true;
+    try {
+      const list = await (await fetch('/api/saver')).json();
+      if (!list.length) return;
+      const img = $('#land');
+      img.onload = () => img.classList.add('on');
+      img.src = list[Math.floor(Math.random() * list.length)];
+    } catch { landSet = false; }
+  }
+
+  // ---------- Continue watching ----------
+  let lastSig = null;
+  function render(recent) {
+    const items = (Array.isArray(recent) ? recent : []).map((r) => ({ ...r, href: safeUrl(r.url) })).filter((r) => r.href && r.title);
+    const sig = JSON.stringify(items.map((r) => [r.key, r.title, r.sub, r.href, r.art, Math.round(r.t), Math.round(r.d)]));
+    if (sig === lastSig) return;
+    lastSig = sig;
+
+    // Remember what had focus so a re-render doesn't throw it away.
+    const C = window.__couch, prev = (C.cur && C.cur.nodeType === 1 && C.cur) || document.activeElement;
+    const prevKey = prev && prev.dataset && prev.dataset.key;
+
+    const empty = !items.length;
+    document.body.classList.toggle('empty', empty);
+    $('#heroFull').hidden = empty;
+    $('#heroEmpty').hidden = !empty;
+    $('#cw').hidden = empty;
+    const art = $('#art');
+    if (empty) {
+      art.classList.remove('on');
+      $('#cwStrip').replaceChildren();
+      landscape();
+      $('#land').style.display = '';
+    } else {
+      const r = items[0], svc = svcFor(new URL(r.href).hostname), a = safeArt(r.art);
+      $('#land').style.display = 'none';
+      if (a && art.getAttribute('src') !== a) {
+        art.classList.remove('on');
+        art.onload = () => art.classList.add('on');
+        art.onerror = () => art.classList.remove('on');
+        art.src = a;
+      } else if (!a) {
+        art.removeAttribute('src');
+        art.classList.remove('on');
+      }
+      $('#hSvcIcon').src = svc.icon;
+      $('#hSvc').textContent = svc.name;
+      const t = $('#hTitle');
+      t.textContent = r.title;
+      t.classList.toggle('long', r.title.length > 16 && r.title.length <= 28);
+      t.classList.toggle('xlong', r.title.length > 28);
+      $('#hSub').textContent = r.sub || '';
+      $('#hSub').hidden = !r.sub;
+      $('#hProg').hidden = !(r.d > 0);
+      $('#hBar').style.width = pct(r) + '%';
+      $('#hLeft').textContent = left(r);
+      $('#resume').href = r.href;
+      $('#openSvc').href = svc.home;
+      $('#openSvc').textContent = 'Open ' + svc.name;
+
+      const cards = items.map((r) => {
+        const c = h('a', 'card'), s = svcFor(new URL(r.href).hostname), a = safeArt(r.art);
+        c.href = r.href;
+        c.dataset.key = r.key;
+        if (a) {
+          const img = h('img', 'art');
+          img.alt = ''; img.src = a;
+          img.onerror = () => img.replaceWith(noArt(s));
+          c.appendChild(img);
+        } else c.appendChild(noArt(s));
+        const badge = h('img', 'badge');
+        badge.alt = ''; badge.src = s.icon;
+        const meta = h('div', 'meta');
+        meta.append(h('div', 'ct', r.title));
+        if (r.sub) meta.append(h('div', 'cs', r.sub));
+        if (r.d > 0) {
+          const bar = h('div', 'bar'), i = h('i');
+          i.style.width = pct(r) + '%';
+          bar.appendChild(i);
+          meta.append(bar);
+        }
+        c.append(badge, meta);
+        return c;
+      });
+      $('#cwStrip').replaceChildren(...cards);
+    }
+
+    // If the focused thing went away, put focus back on the same title, or somewhere sensible.
+    if (prev && prev !== document.body && (!prev.isConnected || !prev.offsetParent)) {
+      const back = (prevKey && (document.querySelector(`.card[data-key="${CSS.escape(prevKey)}"]`) || document.querySelector('.card')))
+        || (empty ? document.querySelector('.app') : $('#resume'));
+      back.focus({ preventScroll: true });
+      C.cur = back;
+    }
+  }
+  function noArt(s) {
+    const d = h('div', 'noart'), i = h('img');
+    i.alt = ''; i.src = s.icon;
+    d.appendChild(i);
+    return d;
+  }
+
+  // Keep the focused card in view, with the next one peeking in.
+  document.addEventListener('focusin', (e) => {
+    const c = e.target.closest && e.target.closest('.card');
+    if (!c) return;
+    const strip = $('#cwStrip'), pad = parseFloat(getComputedStyle(strip).paddingLeft);
+    const x = c.offsetLeft - strip.offsetLeft, w = c.offsetWidth, view = strip.clientWidth;
+    let to = strip.scrollLeft;
+    if (x - pad < to) to = x - pad;
+    else if (x + w + pad + w * 0.35 > to + view) to = x + w + pad + w * 0.35 - view;
+    strip.scrollTo({ left: Math.max(0, to), behavior: 'smooth' });
+  });
+
+  // ---------- Status / power ----------
+  function renderPower(armed) {
+    $('#powerBtn').classList.toggle('armed', armed);
+    $('#powerBtn span').textContent = armed ? 'Press again to turn off' : 'Turn off TV';
+  }
+  async function poll() {
+    try {
+      const s = await (await fetch('/api/tv')).json();
+      $('#phonePill').classList.toggle('on', s.phones > 0);
+      $('#phoneText').textContent = s.phones ? (s.phones > 1 ? `${s.phones} remotes connected` : 'Remote connected') : 'No remote';
+      document.body.classList.toggle('paired', s.phones > 0);
+      renderPower(s.armed);
+      if (s.pin) document.querySelectorAll('.pin').forEach((e) => (e.textContent = s.pin.slice(0, 3) + ' ' + s.pin.slice(3)));
+      render(s.recent);
+    } catch {}
+  }
+
+  $('#powerBtn').addEventListener('click', async () => {
+    await fetch('/api/power', { method: 'POST' }).catch(() => {});
+    poll();
+  });
+  $('#pairBtn').addEventListener('click', () => { $('#pairBig').classList.add('open'); window.__couch.cur = null; window.__couch.cmd('init'); });
+  $('#pairDone').addEventListener('click', () => {
+    $('#pairBig').classList.remove('open');
+    const b = $('#pairBtn');
+    b.focus({ preventScroll: true });
+    window.__couch.cur = b;
+  });
+
+  addEventListener('load', async () => {
+    await poll();
+    setInterval(poll, 1000);
+    // Start on Resume when there is something to continue, else on the first app.
+    const start = !document.body.classList.contains('empty') ? $('#resume') : document.querySelector('.app');
+    start.focus({ preventScroll: true });
+    window.__couch.cur = start;
+    // /tv?saver=1 shows the screensaver right away (for testing).
+    if (new URLSearchParams(location.search).get('saver') === '1') window.__couch.saver.show();
+  });
+
+  // App tiles and Continue watching open in their own kept-open tab (via the PC), so going
+  // Home and back to an app is instant. Falls back to a normal link if that fails.
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest('a[href^="https://"]');
+    if (!a) return;
+    e.preventDefault();
+    fetch('/api/open?url=' + encodeURIComponent(a.href), { method: 'POST' })
+      .then((r) => { if (!r.ok) location.href = a.href; })
+      .catch(() => { location.href = a.href; });
+  });
+</script>
+</body>
+</html>

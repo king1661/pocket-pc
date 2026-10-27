@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<style>
+  :root { --bg: #000; --fill: #1C1C1E; --fill-2: #2C2C2E; --fill-3: #3A3A3C; --text: #fff; --dim: rgba(235,235,245,.6);
+    --dim-2: rgba(235,235,245,.3); --blue: #0A84FF; --red: #FF453A; --green: #30D158; }
+  * { box-sizing: border-box; margin: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; background: var(--bg); color: var(--text); letter-spacing: -.01em;
+    font-family: -apple-system, "SF Pro Text", Inter, Roboto, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  body { display: flex; flex-direction: column; padding: max(28px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom)); gap: 18px; }
+  .logo { width: 64px; height: 64px; border-radius: 14.5px; display: grid; place-items: center;
+    background: linear-gradient(180deg, #2C2C2E, #000); box-shadow: 0 0 0 .5px rgba(255,255,255,.16), 0 8px 24px rgba(0,0,0,.6); }
+  h1 { font-size: 30px; font-weight: 700; letter-spacing: -.02em; }
+  p { color: var(--dim); line-height: 1.45; font-size: 16px; }
+  button { font: inherit; border: 0; border-radius: 14px; height: 52px; font-size: 17px; font-weight: 600; color: #fff;
+    background: var(--blue); display: flex; align-items: center; justify-content: center; gap: 9px; flex: none;
+    transition: transform .12s, background .15s, opacity .15s; }
+  button:active { transform: scale(.97); background: #0066d6; }
+  button.ghost { background: var(--fill-2); color: var(--blue); }
+  button.ghost:active { background: var(--fill-3); }
+  svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .view { display: none; flex-direction: column; gap: 14px; flex: 1; }
+  .view.on { display: flex; }
+  .view { min-height: 0; }
+  .grow { flex: 1; }
+
+  /* Scanner */
+  #cam { position: relative; flex: 1 1 0; min-height: 0; border-radius: 22px; overflow: hidden; background: #0c0c0d; }
+  #cam video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  #cam .frame { position: absolute; left: 50%; top: 50%; width: 64%; aspect-ratio: 1; transform: translate(-50%, -50%);
+    border-radius: 26px; box-shadow: 0 0 0 9999px rgba(0,0,0,.5); }
+  #cam .frame::before { content: ""; position: absolute; inset: 0; border-radius: inherit; border: 4px solid #fff;
+    -webkit-mask: linear-gradient(#000 0 0) top left/28% 28% no-repeat, linear-gradient(#000 0 0) top right/28% 28% no-repeat,
+                  linear-gradient(#000 0 0) bottom left/28% 28% no-repeat, linear-gradient(#000 0 0) bottom right/28% 28% no-repeat; }
+  #cam .line { position: absolute; left: 24%; right: 24%; height: 2px; top: 30%; border-radius: 1px; background: rgba(255,255,255,.85);
+    box-shadow: 0 0 12px rgba(255,255,255,.6); animation: scan 2s ease-in-out infinite alternate; }
+  @keyframes scan { to { top: 70%; } }
+  #cam.found .frame::before { border-color: var(--green); }
+  #camMsg { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); max-width: 90%; text-align: center; font-size: 14px; color: #fff;
+    padding: 8px 14px; border-radius: 999px; background: rgba(30,30,30,.6); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); }
+
+  /* Code entry */
+  .group { border-radius: 12px; background: var(--fill); overflow: hidden; }
+  label { display: block; font-size: 13px; text-transform: uppercase; letter-spacing: .02em; color: var(--dim); padding: 0 16px 7px; }
+  input { width: 100%; font: inherit; font-size: 19px; color: var(--text); background: var(--fill); border: 0;
+    border-radius: 12px; padding: 15px 16px; outline: none; caret-color: var(--blue); }
+  input::placeholder { color: var(--dim-2); }
+  input:focus { box-shadow: inset 0 0 0 1.5px var(--blue); }
+  #pin { font-size: 30px; font-weight: 600; letter-spacing: .5em; text-align: center; font-variant-numeric: tabular-nums; padding-left: .5em; }
+  #err { color: var(--red); font-size: 14px; min-height: 20px; padding: 0 4px; }
+</style>
+</head>
+<body>
+  <div class="logo"><svg viewBox="26 26 56 56" style="width:44px;height:44px"><path d="M37 35h34a6 6 0 0 1 6 6v22a6 6 0 0 1-6 6H37a6 6 0 0 1-6-6V41a6 6 0 0 1 6-6z" fill="none" stroke="#fff" stroke-width="3.4"/><path d="M45 76h18" stroke="#fff" stroke-width="3.4" stroke-linecap="round"/><path d="M49.5 45.2v13.6c0 1.2 1.3 1.9 2.3 1.3l10.6-6.8c.9-.6.9-1.9 0-2.5l-10.6-6.8c-1-.7-2.3 0-2.3 1.2z" fill="#fff" stroke="none"/></svg></div>
+
+  <section class="view" id="home">
+    <h1>Connect to your TV</h1>
+    <p>Open Lounge on your computer. The TV screen shows a QR code and a 6-digit code.</p>
+    <div class="grow"></div>
+    <button id="scanBtn"><svg viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 12h10"/></svg>Scan QR code</button>
+    <button class="ghost" id="codeBtn"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 10h.01M11 10h.01M15 10h.01M8 14h8"/></svg>Enter code instead</button>
+  </section>
+
+  <section class="view" id="scan">
+    <h1>Scan the TV</h1>
+    <div id="cam"><video id="video" playsinline muted></video><div class="frame"></div><div class="line"></div><div id="camMsg">Point at the QR code on the TV</div></div>
+    <button class="ghost" data-go="code">Enter code instead</button>
+  </section>
+
+  <section class="view" id="code">
+    <h1>Enter the code</h1>
+    <p>Both are on the TV screen. Tap “Pair a phone” there if you don’t see them.</p>
+    <div><label for="addr">PC address</label><input id="addr" inputmode="decimal" autocomplete="off" placeholder="192.168.1.20"></div>
+    <div><label for="pin">Code</label><input id="pin" inputmode="numeric" maxlength="7" autocomplete="one-time-code" placeholder="000000"></div>
+    <div id="err"></div>
+    <div class="grow"></div>
+    <button id="connect">Connect</button>
+    <button class="ghost" data-go="scan">Scan QR code instead</button>
+  </section>
+
+  <section class="view" id="offline">
+    <h1>Can’t reach your PC</h1>
+    <p>Make sure Lounge is running on the computer and this phone is on the same Wi-Fi.</p>
+    <div class="grow"></div>
+    <button onclick="CouchApp.retry()">Try again</button>
+    <button class="ghost" onclick="CouchApp.reset()">Connect to a different PC</button>
+  </section>
+
+<script src="jsQR.js"></script>
+<script>
+  const $ = (s) => document.querySelector(s);
+  let stream = null, scanning = false;
+
+  function show(id) {
+    document.querySelectorAll('.view').forEach((v) => v.classList.toggle('on', v.id === id));
+    if (id === 'scan') startScan(); else stopScan();
+    if (id === 'code') setTimeout(() => ($('#addr').value ? $('#pin') : $('#addr')).focus(), 50);
+  }
+  document.querySelectorAll('[data-go]').forEach((b) => b.addEventListener('click', () => show(b.dataset.go)));
+  $('#scanBtn').addEventListener('click', () => show('scan'));
+  $('#codeBtn').addEventListener('click', () => show('code'));
+
+  // ---- QR scanner ----
+  async function startScan() {
+    const msg = $('#camMsg');
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 } }, audio: false });
+    } catch (e) {
+      msg.textContent = 'Camera not available: allow camera access, or enter the code';
+      return;
+    }
+    const video = $('#video');
+    video.srcObject = stream;
+    await video.play();
+    scanning = true;
+    const canvas = document.createElement('canvas'), ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const tick = () => {
+      if (!scanning) return;
+      if (video.readyState >= 2) {
+        const w = 480, h = Math.round(480 * video.videoHeight / video.videoWidth);
+        canvas.width = w; canvas.height = h;
+        ctx.drawImage(video, 0, 0, w, h);
+        const qr = jsQR(ctx.getImageData(0, 0, w, h).data, w, h, { inversionAttempts: 'dontInvert' });
+        if (qr && handleQr(qr.data)) return;
+      }
+      requestAnimationFrame(tick);
+    };
+    tick();
+  }
+  function stopScan() {
+    scanning = false;
+    if (stream) stream.getTracks().forEach((t) => t.stop());
+    stream = null;
+  }
+  function handleQr(text) {
+    let url = text;
+    if (text.startsWith('couchtv://')) url = new URL(text).searchParams.get('u') || '';
+    if (!/^https?:\/\/[^/]+\/remote#t=[\w-]+$/.test(url)) {
+      $('#camMsg').textContent = 'That QR code isn’t a Lounge code';
+      return false;
+    }
+    $('#cam').classList.add('found');
+    $('#camMsg').textContent = 'Connecting…';
+    CouchApp.haptic();
+    stopScan();
+    CouchApp.pairUrl(url);
+    return true;
+  }
+
+  // ---- Code entry ----
+  $('#addr').value = CouchApp.lastHost() || '';
+  $('#pin').addEventListener('input', (e) => {
+    e.target.value = e.target.value.replace(/\D/g, '').slice(0, 6);
+    if (e.target.value.length === 6 && $('#addr').value.trim()) connect();
+  });
+  $('#connect').addEventListener('click', connect);
+  function connect() {
+    const addr = $('#addr').value.trim(), pin = $('#pin').value;
+    if (!addr) return ($('#err').textContent = 'Enter the PC address shown on the TV');
+    if (pin.length !== 6) return ($('#err').textContent = 'The code has 6 digits');
+    $('#err').textContent = '';
+    $('#connect').textContent = 'Connecting…';
+    CouchApp.pairWithCode(addr, pin);
+  }
+  window.onPairError = (msg) => {
+    $('#connect').textContent = 'Connect';
+    $('#err').textContent = msg;
+    $('#pin').value = '';
+    $('#pin').focus();
+  };
+
+  const offline = location.hash === '#offline' && CouchApp.paired();
+  show(offline ? 'offline' : 'home');
+  if (offline) setTimeout(() => CouchApp.retry(), 5000);
+</script>
+</body>
+</html>

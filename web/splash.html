@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{NAME}}</title>
+<link rel="icon" href="data:,">
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  body { display: grid; place-items: center; font-family: "Inter Display", Inter, system-ui, sans-serif; color: #fff; }
+  .wrap { display: grid; justify-items: center; gap: 34px; animation: in .35s ease-out both; }
+  img { width: 200px; height: 200px; border-radius: 44px; box-shadow: 0 30px 80px rgba(0,0,0,.6); }
+  .bar { width: 160px; height: 4px; border-radius: 2px; background: rgba(255,255,255,.14); overflow: hidden; }
+  .bar::after { content: ""; display: block; width: 40%; height: 100%; border-radius: 2px; background: #fff;
+    animation: slide 1.1s ease-in-out infinite; }
+  @keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+  @keyframes in { from { opacity: 0; transform: scale(.94); } }
+</style>
+</head>
+<body>
+  <div class="wrap"><img src="/icons/{{ICON}}.jpg" alt="{{NAME}}"><div class="bar"></div></div>
+</body>
+</html>

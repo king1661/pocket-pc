@@ -1,0 +1,6 @@
+/target
+/android/build
+*.apk
+*.keystore
+*.jks
+.env

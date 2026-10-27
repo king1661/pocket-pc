@@ -1,0 +1,983 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#0B0B0C">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/icon.svg">
+<title>Lounge Remote</title>
+<style>
+  @font-face { font-family: "Inter"; font-weight: 400; font-display: swap; src: url(/font/400) format("truetype"); }
+  @font-face { font-family: "Inter"; font-weight: 500; font-display: swap; src: url(/font/500) format("truetype"); }
+  @font-face { font-family: "Inter"; font-weight: 600; font-display: swap; src: url(/font/600) format("truetype"); }
+  @font-face { font-family: "Inter"; font-weight: 700; font-display: swap; src: url(/font/700) format("truetype"); }
+  :root {
+    --bg: #0B0B0C; --g1: #1C1C1F; --g2: #242428; --g3: #2E2E33; --g4: #3A3A40;
+    --line: rgba(255,255,255,.07); --text: #fff; --dim: rgba(255,255,255,.62); --dim-2: rgba(255,255,255,.36);
+    --red: #FF3B30; --brand: #6E6E73;
+    --sx: max(16px, env(safe-area-inset-left)); --sxr: max(16px, env(safe-area-inset-right));
+    --heroH: 200px; --side: 56px; --playH: 60px;
+    --cross: min(calc(100vw - 2 * var(--side) - 48px), 256px); --corner: min(calc(var(--cross) * .23), 58px);
+  }
+  * { box-sizing: border-box; margin: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; background: var(--bg); color: var(--text); overscroll-behavior: none; overflow: hidden;
+    font-family: Inter, system-ui, Roboto, sans-serif; font-synthesis: none; letter-spacing: -.011em;
+    user-select: none; -webkit-user-select: none; -webkit-font-smoothing: antialiased; }
+  body { position: relative; display: flex; flex-direction: column; gap: 14px; height: 100dvh; max-width: 520px; margin: 0 auto;
+    padding: env(safe-area-inset-top) var(--sxr) max(6px, env(safe-area-inset-bottom)) var(--sx); }
+  body > * { position: relative; z-index: 1; }
+  button { font: inherit; color: inherit; border: 0; background: var(--g2); touch-action: manipulation; cursor: pointer; padding: 0;
+    transition: transform .12s cubic-bezier(.3,.7,.4,1), background .15s, color .15s, box-shadow .2s, filter .15s, opacity .15s; }
+  svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+  .num { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+
+  /* ---- Hero: now playing ---- */
+  #backdrop { position: absolute; z-index: 0; left: 0; right: 0; top: 0; pointer-events: none; overflow: hidden;
+    height: calc(var(--heroH) + env(safe-area-inset-top) + 96px); background: var(--bg);
+    -webkit-mask: linear-gradient(#000 calc(100% - 110px), transparent); mask: linear-gradient(#000 calc(100% - 110px), transparent); }
+  #backdrop .bgl { position: absolute; inset: 0; background: center 28% / cover no-repeat; opacity: 0; transform: scale(1.04);
+    transition: opacity .9s ease, transform 6s ease-out; }
+  #backdrop .bgl.on { opacity: 1; transform: scale(1); }
+  #backdrop .bgl.dim { filter: saturate(.6) brightness(.78); }
+  #tint { position: absolute; inset: 0; opacity: 0; transition: opacity .9s ease, background .9s ease;
+    background: radial-gradient(120% 95% at 18% 0%, color-mix(in srgb, var(--brand) 55%, transparent), transparent 72%),
+                radial-gradient(90% 80% at 100% 20%, color-mix(in srgb, var(--brand) 22%, transparent), transparent 70%); }
+  #tint.soft { opacity: .45; } #tint.full { opacity: 1; }
+  #shade { position: absolute; inset: 0;
+    background: linear-gradient(180deg, rgba(11,11,12,.42) 0%, rgba(11,11,12,.1) 22%, rgba(11,11,12,.45) 52%, rgba(11,11,12,.88) 76%, var(--bg) 100%),
+                linear-gradient(90deg, rgba(11,11,12,.5) 0%, rgba(11,11,12,0) 65%); }
+  #backdrop::after { content: ""; position: absolute; inset: 0; opacity: 0; transition: opacity .3s;
+    background: radial-gradient(130% 90% at 50% 100%, rgba(255,59,48,.38), transparent 70%); }
+  body.armed #backdrop::after { opacity: 1; animation: armGlow 1s ease-in-out infinite alternate; }
+  @keyframes armGlow { from { opacity: .45; } to { opacity: 1; } }
+
+  #hero { flex: none; height: var(--heroH); display: flex; flex-direction: column; justify-content: flex-end; padding: 0 2px 2px; }
+  #chip { position: absolute; top: 20px; left: 0; max-width: calc(100% - 124px); display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 12px 0 10px;
+    border-radius: 14px; font-size: 12.5px; font-weight: 500; color: rgba(255,255,255,.86); white-space: nowrap; overflow: hidden;
+    background: rgba(20,20,22,.55); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); box-shadow: inset 0 0 0 .5px rgba(255,255,255,.12);
+    transition: background .2s, color .2s; }
+  #subText { overflow: hidden; text-overflow: ellipsis; }
+  #dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: rgba(255,255,255,.4); animation: blink 1.2s ease-in-out infinite; }
+  #dot.ok { background: #fff; box-shadow: 0 0 8px rgba(255,255,255,.7); animation: none; }
+  #dot.bad { background: var(--red); box-shadow: 0 0 8px rgba(255,59,48,.8); animation: none; }
+  @keyframes blink { 50% { opacity: .3; } }
+  #chip.armed { background: var(--red); color: #fff; font-weight: 700; font-size: 13.5px; height: 32px; border-radius: 16px; padding: 0 14px 0 12px;
+    box-shadow: 0 0 0 0 rgba(255,59,48,.6); animation: ring 1s ease-out infinite; }
+  #chip.armed #dot { background: #fff; box-shadow: none; }
+  #chip.armed #subText { white-space: normal; line-height: 1.15; }
+  @media (max-width: 380px) { #chip.armed { height: auto; min-height: 32px; padding-top: 5px; padding-bottom: 5px; } }
+  #chip.err { color: #fff; }
+
+  #big { width: 46px; height: 46px; border-radius: 11px; overflow: hidden; margin-bottom: 14px; display: none; place-items: center;
+    background: rgba(40,40,44,.7); color: #fff; box-shadow: 0 0 0 .5px rgba(255,255,255,.14), 0 10px 24px rgba(0,0,0,.5); }
+  #big img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  #big svg { width: 26px; height: 26px; }
+  #hero.lockup #big { display: grid; }
+  #hero.off #big { color: var(--dim); }
+  #eye { display: flex; align-items: center; gap: 7px; margin-bottom: 8px; font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: rgba(255,255,255,.72); }
+  #eye img { width: 18px; height: 18px; border-radius: 5px; box-shadow: 0 0 0 .5px rgba(255,255,255,.15); }
+  #eye img[hidden] { display: none; }
+  #hero.lockup #eye { display: none; }
+  #title { font-weight: 700; text-transform: uppercase; line-height: 1.02; letter-spacing: -.012em; font-size: 30px;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere;
+  }
+  #title.m { font-size: 25px; } #title.s { font-size: 20px; line-height: 1.06; }
+  #hero.lockup #title { text-transform: none; letter-spacing: -.025em; font-size: 32px; line-height: 1.05; }
+  #hsub { margin-top: 7px; font-size: 15px; font-weight: 500; color: rgba(255,255,255,.74); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-height: 1px; }
+  #hsub:empty { display: none; }
+  #prog { margin-top: 12px; display: none; }
+  #hero.video #prog { display: block; }
+  #bar { position: relative; height: 3px; border-radius: 2px; background: rgba(255,255,255,.2); }
+  #fill { position: absolute; left: 0; top: 0; bottom: 0; width: 100%; border-radius: 2px; background: #fff; transform-origin: 0 50%; transform: scaleX(0);
+    box-shadow: 0 0 10px rgba(255,255,255,.35); }
+  #times { display: flex; justify-content: space-between; margin-top: 7px; font-size: 12px; font-weight: 500; color: rgba(255,255,255,.66); }
+  #hero.paused #fill { opacity: .7; }
+
+  #banner { display: none; align-items: center; gap: 10px; padding: 8px 8px 8px 14px; border-radius: 14px; background: var(--g1); font-size: 14px; color: var(--dim);
+    box-shadow: inset 0 0 0 .5px var(--line); }
+  #banner.show { display: flex; }
+  #banner a { margin-left: auto; color: #000; background: #fff; padding: 7px 14px; border-radius: 999px; font-weight: 600; text-decoration: none; white-space: nowrap; }
+
+  /* ---- Apps ---- */
+  #svc { flex: none; display: flex; justify-content: space-between; }
+  #svc button { position: relative; width: min(15.5vw, 60px); aspect-ratio: 1; border-radius: 23%; background: var(--g2);
+    box-shadow: 0 0 0 .5px rgba(255,255,255,.14), 0 8px 18px rgba(0,0,0,.55); }
+  #svc button img { display: block; width: 100%; height: 100%; object-fit: cover; pointer-events: none; border-radius: inherit; }
+  #svc button::after { content: ""; position: absolute; left: 50%; bottom: -9px; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%;
+    background: #fff; box-shadow: 0 0 6px rgba(255,255,255,.8); opacity: 0; transition: opacity .3s; }
+  #svc button.cur::after { opacity: 1; }
+  #svc button.pressed { transform: scale(.9); filter: brightness(.75); }
+
+  /* ---- Top-right hero buttons: output + power ---- */
+  #top { position: absolute; top: 10px; right: 0; display: flex; gap: 10px; z-index: 2; }
+  .orb { width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; color: #fff;
+    background: rgba(28,28,31,.62); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+    box-shadow: inset 0 0 0 .5px rgba(255,255,255,.16), 0 6px 16px rgba(0,0,0,.35); }
+  .orb svg { width: 22px; height: 22px; }
+  .orb.pressed { transform: scale(.92); background: rgba(70,70,76,.8); }
+  #pwr { width: 52px; height: 52px; color: var(--red); }
+  #pwr svg { width: 24px; height: 24px; stroke-width: 2.2; }
+  #pwr.armed { background: var(--red); color: #fff; animation: ring 1s ease-out infinite, pwrBlink 1s ease-in-out infinite alternate; }
+  @keyframes pwrBlink { from { background: #E0261C; } to { background: #FF5247; } }
+  @keyframes ring { 0% { box-shadow: 0 0 0 0 rgba(255,59,48,.75); } 100% { box-shadow: 0 0 0 14px rgba(255,59,48,0); } }
+
+  /* ---- Controls: cross with buttons in its corners, volume either side ---- */
+  #ctl { flex: none; display: flex; align-items: center; justify-content: space-between; }
+  #cross { position: relative; flex: none; width: var(--cross); height: var(--cross); }
+  #cross > svg.shape { position: absolute; inset: 0; width: 100%; height: 100%; stroke: none;
+    filter: drop-shadow(0 14px 22px rgba(0,0,0,.6)) drop-shadow(0 2px 3px rgba(0,0,0,.5)) drop-shadow(0 0 22px rgba(255,255,255,.07)); }
+  #cross button.dir { position: absolute; background: transparent; display: flex; color: #7C7C82; }
+  #cross button.dir svg { width: 22px; height: 22px; stroke-width: 2.4; }
+  #cross .up    { left: 33%; width: 34%; top: 0; height: 33%; justify-content: center; align-items: flex-start; padding-top: 9%; border-radius: calc(var(--cross) * .1) calc(var(--cross) * .1) 0 0; }
+  #cross .down  { left: 33%; width: 34%; bottom: 0; height: 33%; justify-content: center; align-items: flex-end; padding-bottom: 9%; border-radius: 0 0 calc(var(--cross) * .1) calc(var(--cross) * .1); }
+  #cross .left  { top: 33%; height: 34%; left: 0; width: 33%; align-items: center; justify-content: flex-start; padding-left: 9%; border-radius: calc(var(--cross) * .1) 0 0 calc(var(--cross) * .1); }
+  #cross .right { top: 33%; height: 34%; right: 0; width: 33%; align-items: center; justify-content: flex-end; padding-right: 9%; border-radius: 0 calc(var(--cross) * .1) calc(var(--cross) * .1) 0; }
+  #cross button.dir.pressed { color: #1C1C1E; }
+  #cross .up.pressed    { background: linear-gradient(0deg, transparent, rgba(0,0,0,.12)); }
+  #cross .down.pressed  { background: linear-gradient(180deg, transparent, rgba(0,0,0,.12)); }
+  #cross .left.pressed  { background: linear-gradient(270deg, transparent, rgba(0,0,0,.12)); }
+  #cross .right.pressed { background: linear-gradient(90deg, transparent, rgba(0,0,0,.12)); }
+  #cross .ok { position: absolute; left: 35%; top: 35%; width: 30%; height: 30%; border-radius: 50%; color: #1C1C1E;
+    font-weight: 700; font-size: 17px; letter-spacing: .06em;
+    background: radial-gradient(circle at 50% 30%, #FFFFFF, #EDEDF0 60%, #E2E2E6);
+    box-shadow: 0 0 0 1px rgba(0,0,0,.06), 0 4px 10px rgba(0,0,0,.22), 0 1px 2px rgba(0,0,0,.18), inset 0 -2px 3px rgba(0,0,0,.06), inset 0 1px 0 #fff; }
+  #cross .ok.pressed { transform: scale(.93); background: radial-gradient(circle at 50% 40%, #EDEDF0, #DADADE); }
+  /* Round graphite keys: the cross corners, volume, playback. */
+  .key { display: grid; place-items: center; color: #fff; border-radius: 50%;
+    background: linear-gradient(180deg, #2A2A2E, #1C1C1F);
+    box-shadow: inset 0 .5px 0 rgba(255,255,255,.12), inset 0 0 0 .5px rgba(255,255,255,.06), 0 8px 18px rgba(0,0,0,.5); }
+  .key svg { width: 24px; height: 24px; transition: transform .12s; }
+  .key.pressed { background: linear-gradient(180deg, #3A3A40, #2C2C31); transform: scale(.93); }
+  .key.fill svg { stroke-width: 1.2; }
+  #cross .key { position: absolute; width: var(--corner); height: var(--corner); }
+  #cross .tl { left: calc(16.5% - var(--corner) / 2); top: calc(16.5% - var(--corner) / 2); }
+  #cross .tr { right: calc(16.5% - var(--corner) / 2); top: calc(16.5% - var(--corner) / 2); }
+  #cross .bl { left: calc(16.5% - var(--corner) / 2); bottom: calc(16.5% - var(--corner) / 2); }
+  #cross .br { right: calc(16.5% - var(--corner) / 2); bottom: calc(16.5% - var(--corner) / 2); }
+  #mute.active { background: #fff; color: #000; }
+  .vol { flex: none; width: var(--side); display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .vol .key { width: var(--side); height: var(--side); }
+  .vol .key svg { width: 26px; height: 26px; stroke-width: 2; }
+  .vol .cap { font-size: 12px; font-weight: 600; letter-spacing: .08em; color: var(--dim-2); text-transform: uppercase; height: 15px; }
+  #volVal { font-size: 13px; letter-spacing: 0; color: #fff; text-transform: none; }
+  #volVal.muted { color: var(--dim-2); text-decoration: line-through; }
+
+  #play { flex: none; display: grid; grid-template-columns: 1fr 1.25fr 1fr; gap: 10px; }
+  #play .key { height: var(--playH); border-radius: calc(var(--playH) / 2); }
+  #play .key svg { width: 26px; height: 26px; }
+  #play .pp { background: linear-gradient(180deg, #FFFFFF, #E4E4E8); color: #111; box-shadow: 0 8px 18px rgba(0,0,0,.5), inset 0 -2px 3px rgba(0,0,0,.06); }
+  #play .pp.pressed { background: linear-gradient(180deg, #E8E8EC, #D2D2D7); }
+
+  /* ---- Trackpad ---- */
+  #tp { position: relative; flex: 1; min-height: 120px; border-radius: 26px; overflow: hidden; touch-action: none;
+    background:
+      radial-gradient(rgba(255,255,255,.06) .9px, transparent 1.3px) 0 0 / 18px 18px,
+      radial-gradient(120% 90% at 50% 0%, #19191C, #0F0F11 70%);
+    box-shadow: inset 0 0 0 .5px rgba(255,255,255,.1), inset 0 1px 0 rgba(255,255,255,.04), 0 10px 26px rgba(0,0,0,.5); }
+  #legend { position: absolute; left: 0; right: 54px; top: 0; bottom: 54px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+    font-size: 12.5px; font-weight: 500; color: var(--dim-2); pointer-events: none; transition: opacity .5s; }
+  #legend svg { width: 26px; height: 26px; stroke-width: 1.5; opacity: .7; }
+  #tp.used #legend { opacity: .35; }
+  .strip { position: absolute; display: flex; align-items: center; color: var(--dim-2); background: rgba(255,255,255,.045);
+    box-shadow: inset 0 0 0 .5px rgba(255,255,255,.08); transition: background .2s, color .2s; }
+  .strip svg { flex: none; width: 15px; height: 15px; stroke-width: 2.2; }
+  .strip .ridges { flex: 1; -webkit-mask: linear-gradient(var(--md), transparent, #000 22%, #000 78%, transparent); mask: linear-gradient(var(--md), transparent, #000 22%, #000 78%, transparent); }
+  #edge { top: 8px; right: 8px; bottom: 54px; width: 40px; border-radius: 20px; flex-direction: column; padding: 8px 0; --md: 180deg; }
+  #edge .ridges { width: 14px; margin: 4px 0; background: repeating-linear-gradient(180deg, transparent 0 9px, rgba(255,255,255,.22) 9px 10.5px); }
+  #hedge { left: 8px; bottom: 8px; right: 54px; height: 40px; border-radius: 20px; flex-direction: row; padding: 0 8px; --md: 90deg; }
+  #hedge .ridges { height: 14px; margin: 0 4px; background: repeating-linear-gradient(90deg, transparent 0 9px, rgba(255,255,255,.22) 9px 10.5px); }
+  .strip.on { background: rgba(255,255,255,.12); color: #fff; }
+  #edge.on .ridges { background-image: repeating-linear-gradient(180deg, transparent 0 9px, rgba(255,255,255,.55) 9px 10.5px); }
+  #hedge.on .ridges { background-image: repeating-linear-gradient(90deg, transparent 0 9px, rgba(255,255,255,.55) 9px 10.5px); }
+  .touch { position: absolute; width: 150px; height: 150px; margin: -75px 0 0 -75px; border-radius: 50%; pointer-events: none;
+    background: radial-gradient(circle, rgba(255,255,255,.3) 0, rgba(255,255,255,.12) 26%, rgba(255,255,255,.04) 48%, transparent 68%); }
+  .touch::after { content: ""; position: absolute; left: 50%; top: 50%; width: 30px; height: 30px; margin: -15px 0 0 -15px; border-radius: 50%;
+    background: rgba(255,255,255,.12); box-shadow: inset 0 0 0 1px rgba(255,255,255,.4); }
+
+  /* ---- Bottom bar ---- */
+  #bar2 { flex: none; height: 40px; display: flex; align-items: center; justify-content: space-between; padding: 0 4px; margin-top: -4px; }
+  #mark { display: flex; align-items: center; gap: 7px; font-size: 21px; font-weight: 700; letter-spacing: -.035em; }
+  #mark svg { width: 20px; height: 20px; stroke-width: 2; color: rgba(255,255,255,.55); margin-top: 1px; }
+  #gear { display: none; width: 36px; height: 36px; border-radius: 50%; place-items: center; background: var(--g1); color: var(--dim); }
+  #gear svg { width: 19px; height: 19px; }
+  #gear:active { background: var(--g3); }
+  .in-app #gear { display: grid; }
+
+  /* ---- Sheets (keyboard, output) ---- */
+  #scrim { position: fixed; inset: 0; z-index: 9; background: rgba(0,0,0,.55); opacity: 0; pointer-events: none; transition: opacity .25s; }
+  #scrim.on { opacity: 1; pointer-events: auto; }
+  .sheet { position: fixed; inset: auto 0 0 0; z-index: 10; max-width: 520px; margin: 0 auto; background: #161618; border-radius: 22px 22px 0 0;
+    padding: 8px max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+    box-shadow: 0 -12px 40px rgba(0,0,0,.6), inset 0 .5px 0 rgba(255,255,255,.1); transform: translateY(105%); transition: transform .32s cubic-bezier(.32,.72,0,1); }
+  .sheet.open { transform: none; }
+  .sheet, .sheet button, #scrim { touch-action: none; }
+  #out.scrolls #outList, #out.scrolls .row { touch-action: pan-y; }
+  #kb input { touch-action: manipulation; }
+  .grab { position: relative; height: 24px; margin: -8px -16px 0; cursor: grab; }
+  .grab::before { content: ""; position: absolute; left: 50%; top: 10px; width: 40px; height: 5px; margin-left: -20px; border-radius: 3px; background: var(--g4); }
+  .sheet.dragging { transition: none; }
+  .sheetHead { display: flex; align-items: center; justify-content: space-between; height: 40px; margin-bottom: 8px; }
+  .sheetHead h3 { font-size: 17px; font-weight: 700; letter-spacing: -.02em; }
+  .sheetHead .done { background: var(--g3); color: #fff; font-size: 14px; font-weight: 600; padding: 7px 14px; border-radius: 999px; }
+  .sheetHead .done.pressed, .sheetHead .done:active { background: var(--g4); }
+
+  #kb { display: flex; gap: 10px; flex-direction: column; }
+  #kb form { display: flex; gap: 8px; }
+  #kb input { flex: 1; min-width: 0; font: inherit; font-size: 17px; color: var(--text); background: var(--g2); caret-color: #fff;
+    border: 0; border-radius: 14px; padding: 13px 14px; outline: none; box-shadow: inset 0 0 0 .5px var(--line); }
+  #kb input:focus { box-shadow: inset 0 0 0 1px rgba(255,255,255,.3); }
+  #kb input::placeholder { color: var(--dim-2); }
+  #kb .send { padding: 0 20px; border-radius: 14px; background: #fff; color: #000; font-weight: 700; }
+  #kb .send:active { background: #d8d8dc; }
+  #kb .keys { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  #kb .keys button { height: 46px; font-size: 15px; font-weight: 500; border-radius: 14px; background: var(--g2); }
+  #kb .keys button.pressed { background: var(--g4); }
+
+  #out { max-height: 82vh; display: flex; flex-direction: column; }
+  #outList { overflow-y: auto; overscroll-behavior: contain; padding-bottom: 4px; }
+  .secTitle { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .12em; color: var(--dim-2); padding: 16px 6px 8px; }
+  .secTitle:first-child { padding-top: 4px; }
+  .group { border-radius: 16px; overflow: hidden; background: #1F1F22; box-shadow: inset 0 0 0 .5px var(--line); }
+  .row { width: 100%; display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 8px 16px 8px 12px; text-align: left;
+    border-radius: 0; background: transparent; position: relative; }
+  .row + .row::before { content: ""; position: absolute; top: 0; left: 58px; right: 0; height: .5px; background: rgba(255,255,255,.08); }
+  .row.pressed { background: var(--g3); }
+  .row .ic { flex: none; width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: var(--g3); color: #fff; transition: background .2s, color .2s; }
+  .row.on .ic { background: #fff; color: #000; }
+  .row .ic svg { width: 19px; height: 19px; }
+  .row .tx { flex: 1; min-width: 0; }
+  .row .nm, .row .sb { display: block; }
+  .row .nm { font-size: 16px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row.on .nm { font-weight: 600; }
+  .row .sb { font-size: 13px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row .ck { flex: none; width: 20px; color: #fff; visibility: hidden; }
+  .row .ck svg { width: 18px; height: 18px; stroke-width: 2.6; }
+  .row.on .ck { visibility: visible; }
+  .row.empty { color: var(--dim); font-size: 15px; pointer-events: none; padding-left: 16px; }
+  .secFoot { font-size: 13px; color: var(--dim); padding: 8px 6px 0; line-height: 1.35; }
+  .secFoot:empty { display: none; }
+
+  #pair { position: fixed; inset: 0; z-index: 20; background: var(--bg); display: none; place-items: center; text-align: center; padding: 32px; }
+  #pair.open { display: grid; }
+  #pair .logo { width: 72px; height: 72px; border-radius: 18px; margin: 0 auto 20px; display: grid; place-items: center;
+    background: linear-gradient(180deg, #2A2A2E, #141416); box-shadow: 0 0 0 .5px rgba(255,255,255,.15), 0 12px 30px rgba(0,0,0,.6); }
+  #pair .logo svg { width: 40px; height: 40px; }
+  #pair h2 { font-size: 26px; font-weight: 700; letter-spacing: -.03em; margin-bottom: 10px; } #pair p { color: var(--dim); line-height: 1.5; font-size: 15px; }
+
+  /* Shorter screens: the trackpad gives way first, then the hero and controls tighten. */
+  @media (max-height: 800px) {
+    :root { --heroH: 186px; --playH: 54px; }
+    body { gap: 11px; }
+    #title { font-size: 26px; } #title.m { font-size: 23px; } #title.s { font-size: 19px; }
+    #hero.lockup #title { font-size: 30px; }
+    #hero.lockup #big { width: 40px; height: 40px; margin-bottom: 10px; border-radius: 10px; }
+    #svc button { width: min(15vw, 56px); }
+  }
+  @media (max-height: 700px) {
+    :root { --heroH: 168px; --playH: 48px; --cross: min(calc(100vw - 2 * var(--side) - 48px), 190px); }
+    body { gap: 9px; }
+    #svc button { width: min(13vw, 48px); }
+    #hero.lockup #big { display: none; }
+    #tp { min-height: 100px; }
+  }
+</style>
+</head>
+<body>
+<div id="backdrop" aria-hidden="true">
+  <div class="bgl" id="bgA"></div><div class="bgl" id="bgB"></div>
+  <div id="tint"></div><div id="shade"></div>
+</div>
+
+<header id="hero" class="lockup">
+  <div id="chip"><span id="dot"></span><span id="subText">Connecting…</span></div>
+  <div id="top">
+    <button id="outBtn" class="orb" aria-label="Output"><svg viewBox="0 0 24 24"><path d="M6 17H5a2.5 2.5 0 0 1-2.5-2.5v-8A2.5 2.5 0 0 1 5 4h14a2.5 2.5 0 0 1 2.5 2.5v8A2.5 2.5 0 0 1 19 17h-1"/><path d="M12 14.5 17 20.5H7z" fill="currentColor" stroke-width="1.4"/></svg></button>
+    <button id="pwr" class="orb" aria-label="TV on/off"><svg viewBox="0 0 24 24"><path d="M12 3.5v8"/><path d="M6.6 6.8a7.5 7.5 0 1 0 10.8 0"/></svg></button>
+  </div>
+  <div id="big"></div>
+  <div id="eye"><img id="eyeIcon" alt="" hidden><span id="eyeText">Lounge</span></div>
+  <div id="title">Lounge</div>
+  <div id="hsub"></div>
+  <div id="prog">
+    <div id="bar"><div id="fill"></div></div>
+    <div id="times" class="num"><span id="tCur">0:00</span><span id="tDur">0:00</span></div>
+  </div>
+</header>
+
+<div id="banner"><span>Get the full-screen Android app</span><a id="appLink" href="/couchtv.apk">Get app</a></div>
+
+<div id="svc">
+  <button data-open="netflix" aria-label="Netflix"><img src="icons/netflix.jpg" alt=""></button>
+  <button data-open="hulu" aria-label="Hulu"><img src="icons/hulu.jpg" alt=""></button>
+  <button data-open="paramount" aria-label="Paramount+"><img src="icons/paramount.jpg" alt=""></button>
+  <button data-open="disney" aria-label="Disney+"><img src="icons/disney.jpg" alt=""></button>
+  <button data-open="youtube" aria-label="YouTube"><img src="icons/youtube.jpg" alt=""></button>
+</div>
+
+<section id="ctl">
+  <div class="vol">
+    <button class="key" data-vol="down" data-repeat aria-label="Volume down"><svg viewBox="0 0 24 24"><path d="M6.5 12h11"/></svg></button>
+    <span class="cap">Vol</span>
+  </div>
+  <div id="cross">
+    <svg class="shape" viewBox="0 0 100 100" aria-hidden="true">
+      <defs>
+        <linearGradient id="cg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFFFFF"/><stop offset=".55" stop-color="#F1F1F3"/><stop offset="1" stop-color="#D6D6DB"/></linearGradient>
+        <linearGradient id="cs" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="1"/><stop offset=".5" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".12"/></linearGradient>
+      </defs>
+      <path d="M43 0H57A10 10 0 0 1 67 10V27A6 6 0 0 0 73 33H90A10 10 0 0 1 100 43V57A10 10 0 0 1 90 67H73A6 6 0 0 0 67 73V90A10 10 0 0 1 57 100H43A10 10 0 0 1 33 90V73A6 6 0 0 0 27 67H10A10 10 0 0 1 0 57V43A10 10 0 0 1 10 33H27A6 6 0 0 0 33 27V10A10 10 0 0 1 43 0Z"
+        fill="url(#cg)" stroke="url(#cs)" stroke-width=".7"/>
+    </svg>
+    <button class="dir up" data-nav="up" data-repeat aria-label="Up"><svg viewBox="0 0 24 24"><path d="m7 14.5 5-5 5 5"/></svg></button>
+    <button class="dir left" data-nav="left" data-repeat aria-label="Left"><svg viewBox="0 0 24 24"><path d="m14.5 7-5 5 5 5"/></svg></button>
+    <button class="dir right" data-nav="right" data-repeat aria-label="Right"><svg viewBox="0 0 24 24"><path d="m9.5 7 5 5-5 5"/></svg></button>
+    <button class="dir down" data-nav="down" data-repeat aria-label="Down"><svg viewBox="0 0 24 24"><path d="m7 9.5 5 5 5-5"/></svg></button>
+    <button class="ok" data-nav="ok">OK</button>
+    <button class="key tl" data-nav="back" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M9 14.5 4 9.5l5-5"/><path d="M4 9.5h10.5a5 5 0 0 1 0 10H11"/></svg></button>
+    <button class="key tr" data-home aria-label="Home"><svg viewBox="0 0 24 24"><path d="M3.5 11 12 3.8l8.5 7.2"/><path d="M5.8 9.3v10.2h12.4V9.3"/><path d="M10 19.5v-5h4v5"/></svg></button>
+    <button class="key bl" id="mute" data-vol="mute" aria-label="Mute"><svg viewBox="0 0 24 24"><path d="M11 5 6.5 9H3.5v6h3l4.5 4z" fill="currentColor" stroke-width="1.4"/><path d="m16 9.5 5 5M21 9.5l-5 5"/></svg></button>
+    <button class="key br" data-kb aria-label="Keyboard"><svg viewBox="0 0 24 24"><rect x="2.5" y="5.5" width="19" height="13" rx="2.5"/><path d="M6.5 9.5h.01M10 9.5h.01M14 9.5h.01M17.5 9.5h.01M6.5 12.5h.01M17.5 12.5h.01M10 12.5h4M8 15.5h8"/></svg></button>
+  </div>
+  <div class="vol">
+    <button class="key" data-vol="up" data-repeat aria-label="Volume up"><svg viewBox="0 0 24 24"><path d="M6.5 12h11M12 6.5v11"/></svg></button>
+    <span class="cap num" id="volVal">–</span>
+  </div>
+</section>
+
+<div id="play">
+  <button class="key fill" data-nav="rew" data-repeat aria-label="Rewind"><svg viewBox="0 0 24 24"><path d="M11 17.5 4.5 12 11 6.5z" fill="currentColor"/><path d="M19.5 17.5 13 12l6.5-5.5z" fill="currentColor"/></svg></button>
+  <button class="key fill pp" data-nav="playpause" aria-label="Play/Pause"><svg viewBox="0 0 24 24"><path d="M4.5 6v12l8-6z" fill="currentColor"/><path d="M16 6.5v11M20 6.5v11" stroke-width="2.3"/></svg></button>
+  <button class="key fill" data-nav="ffwd" data-repeat aria-label="Forward"><svg viewBox="0 0 24 24"><path d="m13 17.5 6.5-5.5L13 6.5z" fill="currentColor"/><path d="M4.5 17.5 11 12 4.5 6.5z" fill="currentColor"/></svg></button>
+</div>
+
+<div id="tp">
+  <div id="legend"><svg viewBox="0 0 24 24"><path d="M9 11.5V5a1.5 1.5 0 0 1 3 0v5.5"/><path d="M12 10V8.5a1.5 1.5 0 0 1 3 0V11"/><path d="M15 10.5a1.5 1.5 0 0 1 3 0V15a6 6 0 0 1-6 6h-.5a6 6 0 0 1-4.7-2.3L4.4 15.6a1.5 1.5 0 0 1 2.3-1.9L9 16"/></svg><span>Drag to move · Tap to click</span></div>
+  <div id="edge" class="strip"><svg viewBox="0 0 24 24"><path d="m7 14.5 5-5 5 5"/></svg><div class="ridges" id="ridges"></div><svg viewBox="0 0 24 24"><path d="m7 9.5 5 5 5-5"/></svg></div>
+  <div id="hedge" class="strip"><svg viewBox="0 0 24 24"><path d="m14.5 7-5 5 5 5"/></svg><div class="ridges" id="hridges"></div><svg viewBox="0 0 24 24"><path d="m9.5 7 5 5-5 5"/></svg></div>
+</div>
+
+<footer id="bar2">
+  <div id="mark">Lounge<svg viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="13" rx="3"/><path d="m8.5 2.5 3.5 3.5 3.5-3.5"/></svg></div>
+  <button id="gear" aria-label="Change PC"><svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg></button>
+</footer>
+
+<div id="scrim"></div>
+
+<div id="kb" class="sheet">
+  <div class="grab"></div>
+  <form id="kbf"><input id="kbi" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Type, then Send" enterkeyhint="send"><button class="send">Send</button></form>
+  <div class="keys">
+    <button data-key="Backspace">⌫ Delete</button>
+    <button data-key="Space">Space</button>
+    <button data-key="Enter">Enter</button>
+  </div>
+  <div class="sheetHead" style="margin:0;justify-content:center"><button class="done" id="kbx">Done</button></div>
+</div>
+
+<div id="out" class="sheet" role="dialog" aria-label="Output">
+  <div class="grab"></div>
+  <div class="sheetHead"><span style="width:62px"></span><h3>Output</h3><button class="done" id="outx">Done</button></div>
+  <div id="outList">
+    <div class="secTitle">Screen</div>
+    <div class="group" id="screens"></div>
+    <div class="secFoot" id="screenFoot"></div>
+    <div class="secTitle">Sound</div>
+    <div class="group" id="audio"></div>
+  </div>
+</div>
+
+<div id="pair"><div>
+  <div class="logo"><svg viewBox="0 0 24 24" style="stroke:#fff"><rect x="2.5" y="4" width="19" height="13" rx="2.5"/><path d="M8 20.5h8"/><path d="M10.5 8v5l4-2.5z" fill="#fff" stroke-width="1"/></svg></div>
+  <h2>Pair this phone</h2><p>Scan the QR code on the TV screen with your phone camera.<br>It sets up this remote automatically.</p>
+</div></div>
+
+<script>
+const $ = (s) => document.querySelector(s), $$ = (s) => document.querySelectorAll(s);
+const app = window.CouchApp; // present inside the Android app
+if (app) document.documentElement.classList.add('in-app');
+
+const m = location.hash.match(/t=([\w-]+)/);
+if (m) { localStorage.couchtvToken = m[1]; history.replaceState(null, '', '/remote'); }
+const token = localStorage.couchtvToken;
+
+if (!app && /Android/i.test(navigator.userAgent) && token) {
+  // In Chrome on Android: offer the app. If it's installed the link hands it the pairing,
+  // otherwise Chrome falls back to downloading the APK.
+  const pairUrl = `${location.origin}/remote#t=${token}`;
+  $('#banner').classList.add('show');
+  $('#appLink').addEventListener('click', (e) => {
+    e.preventDefault();
+    location.href = `intent://pair?u=${encodeURIComponent(pairUrl)}#Intent;scheme=couchtv;package=dev.couchtv.remote;` +
+      `S.browser_fallback_url=${encodeURIComponent(location.origin + '/couchtv.apk')};end`;
+  });
+}
+
+// Connection with a heartbeat: a phone that slept or switched Wi-Fi can be left with a
+// dead socket that still looks open, so ping every second and reconnect when quiet.
+// Some routers also silently kill a connection ~30 s after it opens, so every 20 s we open a
+// fresh one and switch over before closing the old (`swap`), which nobody notices.
+const ROTATE_MS = 20000;
+let ws = null, lastMsg = 0, retry = 0, dialAt = 0, why = null, bornAt = 0, spare = null;
+function connect(swap) {
+  if (!token) return $('#pair').classList.add('open');
+  clearTimeout(retry);
+  const sock = new WebSocket(`ws://${location.host}/ws?t=${encodeURIComponent(token)}`);
+  if (swap) {
+    spare = sock;
+    setTimeout(() => { if (spare === sock) { spare = null; try { sock.close(); } catch {} } }, 3000);
+  } else {
+    ws = sock;
+    dialAt = Date.now();
+  }
+  sock.onopen = () => {
+    if (swap) {
+      if (spare !== sock) return sock.close();
+      spare = null;
+      const old = ws;
+      ws = sock;
+      // Let anything already in flight on the old one finish arriving first.
+      setTimeout(() => { try { old && old.close(); } catch {} }, 1500);
+    }
+    bornAt = Date.now();
+    lastMsg = Date.now();
+    setSub('ok', 'Connected');
+    // Tell the PC why we had to reconnect, so random drops can be traced in its log.
+    if (why) sock.send(JSON.stringify({ t: 'diag', ...why, vis: document.visibilityState }));
+    why = null;
+    resendUnacked(sock);
+    if ($('#out').classList.contains('open')) sock.send('{"t":"outputs"}');
+  };
+  sock.onclose = (e) => {
+    if (sock !== ws) return;
+    why = why || { why: 'closed', code: e.code, silent: Date.now() - lastMsg };
+    setSub('bad', 'Reconnecting…');
+    retry = setTimeout(connect, 700);
+  };
+  sock.onmessage = (e) => {
+    lastMsg = Date.now();
+    const msg = JSON.parse(e.data);
+    if (msg.t === 'denied') { localStorage.removeItem('couchtvToken'); ws = null; sock.close(); $('#pair').classList.add('open'); }
+    if (msg.t === 'ack') { unacked.delete(msg.rid); return; }
+    if (msg.t === 'status') render(msg);
+    if (msg.t === 'outputs') renderOutputs(msg);
+  };
+}
+function reconnect(reason) {
+  why = why || { why: reason || 'unknown', silent: Date.now() - lastMsg, state: ws ? ws.readyState : -1 };
+  if (spare) { try { spare.close(); } catch {} spare = null; }
+  const old = ws;
+  ws = null;
+  try { old && old.close(); } catch {}
+  connect();
+}
+function healthy() { return ws && ws.readyState === 1 && Date.now() - lastMsg < 2500; }
+setInterval(() => {
+  if (ws && ws.readyState === 1) ws.send('{"t":"ping"}');
+  const stuck = ws && ws.readyState === 1 && [...unacked.values()].some((u) => Date.now() - u.at > 1500);
+  if (token && ws && Date.now() - lastMsg > 3000 && ws.readyState !== 0) reconnect('silent');
+  else if (token && stuck) reconnect('no-ack');
+  // A connection attempt on a flaky network can hang for minutes; give up and dial again.
+  else if (token && ws && ws.readyState === 0 && Date.now() - dialAt > 5000) reconnect('dial-timeout');
+  else if (token && ws && ws.readyState === 1 && !spare && Date.now() - bornAt > ROTATE_MS) connect(true);
+}, 1000);
+// Coming back to the app (or screen on): check right away instead of waiting.
+window.couchResume = () => { if (!healthy()) reconnect('resume'); else ws.send('{"t":"ping"}'); };
+document.addEventListener('visibilitychange', () => { if (!document.hidden) window.couchResume(); });
+// Android fires "online" on every network blip; only redial if the link really is down.
+addEventListener('online', () => { if (!healthy()) reconnect('online'); });
+function setSub(cls, text) {
+  $('#dot').className = cls; $('#subText').textContent = text;
+  $('#chip').classList.toggle('err', cls === 'bad');
+}
+function haptic(strong) {
+  if (app && app.haptic) strong && app.hapticStrong ? app.hapticStrong() : app.haptic();
+  else navigator.vibrate?.(strong ? 25 : 8);
+}
+// Presses carry an id and the PC acks each one. If an ack doesn't come back quickly the
+// connection is dead (the network can silently drop it), so reconnect and resend; the PC
+// ignores ids it has already run, so nothing happens twice.
+const session = Math.random().toString(36).slice(2, 8);
+let seq = 0;
+const unacked = new Map(); // id -> { m, at }
+function send(o) {
+  const frequent = o.t === 'move' || o.t === 'scroll';
+  if (!frequent) {
+    o.rid = session + '-' + ++seq;
+    const m = JSON.stringify(o);
+    unacked.set(o.rid, { m, at: Date.now() });
+    if (ws && ws.readyState === 1) ws.send(m);
+    else if (!ws || ws.readyState === 3) reconnect('press-while-down');
+    haptic();
+    return;
+  }
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify(o));
+}
+function resendUnacked(sock) {
+  const now = Date.now();
+  for (const [id, u] of unacked) {
+    // Too old to still be wanted (the PC drops presses older than 5 s anyway).
+    if (now - u.at > 4000) unacked.delete(id);
+    else sock.send(u.m);
+  }
+}
+
+// site -> [name, icon file]
+const sites = {
+  home: ['Home', null], 'netflix.com': ['Netflix', 'netflix'], 'hulu.com': ['Hulu', 'hulu'],
+  'paramountplus.com': ['Paramount+', 'paramount'], 'disneyplus.com': ['Disney+', 'disney'],
+  'youtube.com': ['YouTube', 'youtube'],
+};
+const BRAND = { netflix: '#E50914', hulu: '#1CE783', paramount: '#0064FF', disney: '#1A3FBF', youtube: '#FF0000' };
+const TV_GLYPH = '<svg viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="13" rx="2.5"/><path d="M8 20.5h8"/></svg>';
+
+// ---- Hero backdrop: two layers that cross-fade when the artwork changes ----
+let bgKey = null, bgSeq = 0, bgFront = $('#bgA'), saverUrl = null;
+function setBackdrop(url, dim) {
+  const key = (url || '') + (dim ? '#dim' : '');
+  if (key === bgKey) return;
+  bgKey = key;
+  const seq = ++bgSeq;
+  const show = (ok) => {
+    if (seq !== bgSeq) return;
+    const back = bgFront === $('#bgA') ? $('#bgB') : $('#bgA');
+    if (ok && url) {
+      back.style.backgroundImage = `url("${url.replace(/"/g, '%22')}")`;
+      back.classList.toggle('dim', !!dim);
+      void back.offsetWidth;
+      back.classList.add('on');
+    }
+    bgFront.classList.remove('on');
+    bgFront = back;
+    if (!ok || !url) back.classList.remove('on');
+  };
+  if (!url) return show(false);
+  const img = new Image();
+  img.onload = () => show(true);
+  img.onerror = () => show(false);
+  img.src = url;
+}
+function artUrl(a) {
+  if (!a) return null;
+  if (/^https?:\/\//i.test(a)) return a;
+  if (a.startsWith('/')) return a + (a.includes('?') ? '&' : '?') + 't=' + encodeURIComponent(token || '');
+  return null;
+}
+fetch('/api/saver').then((r) => r.json()).then((list) => {
+  if (Array.isArray(list) && list.length) {
+    saverUrl = list[Math.floor(Math.random() * list.length)];
+    if (lastStatus) render(lastStatus);
+  }
+}).catch(() => {});
+
+// ---- Hero text ----
+function cleanTitle(t, name) {
+  t = String(t || '').trim().replace(/^\(\d+\)\s*/, '');
+  const n = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  t = t.replace(new RegExp(`\\s*[-|–—·:]\\s*${n}\\s*$`, 'i'), '').replace(new RegExp(`^${n}\\s*[-|–—·:]\\s*`, 'i'), '').trim();
+  return !t || t.toLowerCase() === name.toLowerCase() ? name : t;
+}
+function fmt(sec) {
+  sec = Math.max(0, Math.floor(sec || 0));
+  const h = Math.floor(sec / 3600), mm = Math.floor((sec % 3600) / 60), ss = String(sec % 60).padStart(2, '0');
+  return h ? `${h}:${String(mm).padStart(2, '0')}:${ss}` : `${mm}:${ss}`;
+}
+let heroKey = '';
+function setHero(o) {
+  const hero = $('#hero');
+  hero.className = o.cls;
+  const k = o.cls + '|' + o.big + '|' + o.eyeIcon + '|' + o.eye + '|' + o.title + '|' + o.sub;
+  if (k === heroKey) return;
+  heroKey = k;
+  $('#big').innerHTML = o.big;
+  const ei = $('#eyeIcon');
+  ei.hidden = !o.eyeIcon;
+  if (o.eyeIcon && ei.getAttribute('src') !== o.eyeIcon) ei.src = o.eyeIcon;
+  $('#eyeText').textContent = o.eye;
+  const t = $('#title');
+  t.textContent = o.title;
+  t.className = o.title.length > 26 ? 's' : o.title.length > 15 ? 'm' : '';
+  $('#hsub').textContent = o.sub || '';
+}
+
+// ---- Progress: the PC reports every ~2 s; extrapolate smoothly in between ----
+let prog = null, progRaf = 0;
+function tickProgress() {
+  progRaf = 0;
+  if (!prog) return;
+  const pos = Math.min(prog.d, prog.t + (prog.paused ? 0 : (performance.now() - prog.at) / 1000));
+  $('#fill').style.transform = `scaleX(${prog.d ? pos / prog.d : 0})`;
+  const cur = fmt(pos);
+  if ($('#tCur').textContent !== cur) $('#tCur').textContent = cur;
+  if (!prog.paused && !document.hidden && pos < prog.d) progRaf = requestAnimationFrame(tickProgress);
+}
+function setProgress(np) {
+  cancelAnimationFrame(progRaf); progRaf = 0;
+  if (!np) { prog = null; return; }
+  prog = { t: +np.t || 0, d: +np.d || 0, paused: !!np.paused, at: performance.now() };
+  $('#tDur').textContent = fmt(prog.d);
+  tickProgress();
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden && prog && !progRaf) tickProgress(); });
+
+let wasInput = false, armedTimer = 0, build = null, tvOn = false, lastStatus = null;
+function render(s) {
+  if (build && s.build && s.build !== build) return location.reload();
+  build = s.build || build;
+  lastStatus = s;
+  tvOn = !!s.tv;
+  const [name, icon] = sites[s.site] || [s.site || 'Lounge', null];
+  const np = s.tv ? s.np : null;
+  const brand = (icon && BRAND[icon]) || null;
+  document.documentElement.style.setProperty('--brand', brand || '#6E6E73');
+  const iconImg = icon ? `<img src="icons/${icon}.jpg" alt="">` : TV_GLYPH;
+  const tint = $('#tint');
+
+  if (!s.tv) {
+    setHero({ cls: 'lockup off', big: TV_GLYPH, eye: 'Lounge', title: 'TV is off', sub: 'Tap power to turn on' });
+    setBackdrop(saverUrl, true);
+    tint.className = '';
+  } else if (np) {
+    const video = !!np.video && +np.d > 0;
+    const cls = video ? 'video' + (np.paused ? ' paused' : '') : '';
+    const state = np.video ? (np.paused ? 'Paused' : 'Now playing') : 'Browsing';
+    setHero({ cls, big: '', eyeIcon: icon ? `icons/${icon}.jpg` : '', eye: `${name} · ${state}`,
+      title: cleanTitle(np.title, name), sub: np.sub || '' });
+    const art = artUrl(np.art);
+    setBackdrop(art, false);
+    tint.className = art ? 'soft' : 'full';
+  } else if (s.site === 'home' || !icon) {
+    setHero({ cls: 'lockup', big: TV_GLYPH, eye: 'Lounge', title: name === 'Lounge' ? 'Lounge' : name,
+      sub: s.site === 'home' ? 'Pick an app to start watching' : 'Browsing' });
+    setBackdrop(saverUrl, false);
+    tint.className = '';
+  } else {
+    setHero({ cls: 'lockup', big: iconImg, eye: name, title: name, sub: s.mode === 'player' ? 'Watching' : 'Pick something to watch' });
+    setBackdrop(null);
+    tint.className = 'full';
+  }
+  setProgress(np && np.video && +np.d > 0 ? np : null);
+  $$('#svc button').forEach((b) => b.classList.toggle('cur', !!s.tv && b.dataset.open === icon));
+
+  const pwr = $('#pwr');
+  pwr.classList.toggle('on', !!s.tv);
+  const disarm = () => {
+    pwr.classList.remove('armed');
+    $('#chip').classList.remove('armed'); document.body.classList.remove('armed');
+  };
+  clearTimeout(armedTimer);
+  disarm();
+  if (s.armed) {
+    pwr.classList.add('armed');
+    $('#chip').classList.add('armed'); document.body.classList.add('armed');
+    setSub('bad', 'Tap power again to turn off');
+    $('#chip').classList.remove('err');
+    armedTimer = setTimeout(() => { disarm(); setSub('ok', idle()); }, 4000);
+  } else if (s.err) setSub('bad', s.err.slice(0, 70));
+  else setSub('ok', idle());
+  function idle() { return !s.tv ? 'Connected · TV off' : s.mode === 'player' ? 'Connected · Watching' : 'Connected'; }
+  const vol = s.vol || '', muted = /muted/.test(vol);
+  $('#volVal').textContent = vol.replace(/\s*muted/, '') || '–';
+  $('#volVal').classList.toggle('muted', muted);
+  $('#mute').classList.toggle('active', muted);
+  renderScreenFoot();
+  if (s.input && !wasInput) openKb();
+  wasInput = !!s.input;
+}
+
+// Press-and-hold repeats for arrows, seek and volume.
+function bindPress(el, fn) {
+  let t1, t2;
+  const stop = () => { clearTimeout(t1); clearInterval(t2); el.classList.remove('pressed'); };
+  el.addEventListener('pointerdown', (e) => {
+    e.preventDefault(); el.classList.add('pressed'); fn();
+    if (el.hasAttribute('data-repeat')) t1 = setTimeout(() => (t2 = setInterval(fn, 110)), 400);
+  });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => el.addEventListener(ev, stop));
+  el.addEventListener('contextmenu', (e) => e.preventDefault());
+}
+// Sheet buttons act on finger-up. A plain 'click' gets dropped by Chrome on Android whenever the
+// thumb drifts past its tiny touch slop during the tap (it turns into a pan + pointercancel), which
+// is why rows used to need a careful press-and-hold. These elements are touch-action: none, so the
+// pointer stream is never cancelled; we decide "tap" ourselves with a generous tolerance.
+function bindTap(el, fn) {
+  let p = null, last = 0;
+  el.addEventListener('pointerdown', (e) => {
+    p = { id: e.pointerId, x: e.clientX, y: e.clientY };
+    el.classList.add('pressed');
+  });
+  el.addEventListener('pointerup', (e) => {
+    el.classList.remove('pressed');
+    if (!p || e.pointerId !== p.id) return;
+    const r = el.getBoundingClientRect(), pad = 12, moved = Math.hypot(e.clientX - p.x, e.clientY - p.y);
+    const inside = e.clientX > r.left - pad && e.clientX < r.right + pad && e.clientY > r.top - pad && e.clientY < r.bottom + pad;
+    p = null;
+    if (inside && moved < 30) { last = Date.now(); fn(e); }
+  });
+  ['pointercancel', 'pointerleave'].forEach((ev) => el.addEventListener(ev, (e) => {
+    if (ev === 'pointerleave' && p && e.pointerType !== 'mouse') return; // touch "leaves" on up; pointerup decides
+    el.classList.remove('pressed'); p = null;
+  }));
+  // Only keyboard / accessibility clicks (detail 0). A touch's own click is ignored: it can land on
+  // whatever just appeared under the finger (the scrim right after a sheet opens) and close it again.
+  el.addEventListener('click', (e) => { e.preventDefault(); if (e.detail === 0 && Date.now() - last > 600) { last = Date.now(); fn(e); } });
+}
+$$('[data-nav]').forEach((b) => bindPress(b, () => send({ t: 'nav', k: b.dataset.nav })));
+$$('[data-vol]').forEach((b) => bindPress(b, () => send({ t: 'vol', v: b.dataset.vol })));
+$$('[data-open]').forEach((b) => bindPress(b, () => send({ t: 'open', s: b.dataset.open })));
+$$('[data-home]').forEach((b) => bindPress(b, () => send({ t: 'home' })));
+$$('[data-key]').forEach((b) => bindPress(b, () => send({ t: 'key', k: b.dataset.key })));
+$$('[data-kb]').forEach((b) => bindPress(b, () => ($('#kb').classList.contains('open') ? closeKb() : openKb())));
+// Power: the PC decides (one press turns on, two presses within 4s turn off).
+bindPress($('#pwr'), () => send({ t: 'power' }));
+bindTap($('#gear'), () => { if (confirm('Pair with a different PC?')) app.reset(); });
+
+// Hooks for the Android app: hardware volume keys and the back gesture.
+window.couchKey = (k) => {
+  if (k === 'volup') send({ t: 'vol', v: 'up' });
+  else if (k === 'voldown') send({ t: 'vol', v: 'down' });
+  else if (k === 'back') {
+    if ($('#out').classList.contains('open')) closeOut();
+    else if ($('#kb').classList.contains('open')) closeKb();
+    else send({ t: 'nav', k: 'back' });
+  }
+};
+
+function scrim() { $('#scrim').classList.toggle('on', $('#kb').classList.contains('open') || $('#out').classList.contains('open')); }
+function openKb() { closeOut(); $('#kb').classList.add('open'); $('#kbi').focus(); scrim(); }
+function closeKb() { $('#kb').classList.remove('open'); $('#kbi').blur(); scrim(); }
+bindTap($('#kbx'), closeKb);
+function sendText() {
+  const v = $('#kbi').value;
+  if (v) send({ t: 'text', v });
+  $('#kbi').value = '';
+}
+$('#kbf').addEventListener('submit', (e) => { e.preventDefault(); sendText(); });
+bindTap($('#kbf .send'), () => { sendText(); $('#kbi').focus(); });
+bindTap($('#scrim'), () => { closeKb(); closeOut(); });
+
+// ---- Output picker: which screen shows the TV, which speakers play it ----
+let outs = null;
+const ICONS = {
+  screen: '<svg viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="13" rx="2.5"/><path d="M8 20.5h8"/></svg>',
+  speaker: '<svg viewBox="0 0 24 24"><rect x="5.5" y="2.5" width="13" height="19" rx="3"/><circle cx="12" cy="14.5" r="3.2"/><path d="M12 7h.01"/></svg>',
+  phones: '<svg viewBox="0 0 24 24"><path d="M4 17v-4a8 8 0 0 1 16 0v4"/><rect x="3" y="14" width="4.5" height="7" rx="2"/><rect x="16.5" y="14" width="4.5" height="7" rx="2"/></svg>',
+  check: '<svg viewBox="0 0 24 24"><path d="m4.5 12.5 5 5 10-11"/></svg>',
+};
+const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+function row(on, icon, name, sub, attrs) {
+  return `<button class="row${on ? ' on' : ''}" ${attrs}><span class="ic">${ICONS[icon]}</span>` +
+    `<span class="tx"><span class="nm">${esc(name)}</span>${sub ? `<span class="sb">${esc(sub)}</span>` : ''}</span>` +
+    `<span class="ck">${ICONS.check}</span></button>`;
+}
+function renderOutputs(msg) {
+  if (msg) outs = { screens: msg.screens || [], audio: msg.audio || [] };
+  const loading = '<div class="row empty">Loading…</div>';
+  $('#screens').innerHTML = !outs ? loading : outs.screens.length
+    ? outs.screens.map((s, i) => row(s.on, 'screen', s.label || s.name, s.label ? s.name : '', `data-screen="${i}"`)).join('')
+    : '<div class="row empty">No screens found</div>';
+  $('#audio').innerHTML = !outs ? loading : outs.audio.length
+    ? outs.audio.map((a, i) => row(a.on, /head|ear|buds|airpods|bluetooth/i.test(a.name) ? 'phones' : 'speaker', a.name, '', `data-audio="${i}"`)).join('')
+    : '<div class="row empty">No speakers found</div>';
+  $$('#outList [data-screen]').forEach((b) => bindTap(b, () => pickScreen(+b.dataset.screen)));
+  $$('#outList [data-audio]').forEach((b) => bindTap(b, () => pickAudio(+b.dataset.audio)));
+  renderScreenFoot();
+  fitOut();
+}
+function renderScreenFoot() {
+  $('#screenFoot').textContent = tvOn ? '' : 'The TV opens on this screen when it turns on.';
+}
+function pickScreen(i) {
+  const s = outs.screens[i];
+  outs.screens.forEach((x, j) => (x.on = j === i)); // optimistic; the reply confirms
+  renderOutputs();
+  send({ t: 'screen', name: s.name });
+}
+function pickAudio(i) {
+  const a = outs.audio[i];
+  outs.audio.forEach((x, j) => (x.on = j === i));
+  renderOutputs();
+  send({ t: 'audio', id: a.id });
+}
+function openOut() {
+  closeKb();
+  renderOutputs();
+  $('#out').classList.add('open'); scrim();
+  send({ t: 'outputs' });
+}
+function closeOut() { $('#out').classList.remove('open'); scrim(); }
+// Rows are touch-action: none (so taps can't turn into a cancelled pan) unless the list really
+// needs to scroll on this screen, in which case vertical panning is allowed again.
+function fitOut() { const l = $('#outList'); $('#out').classList.toggle('scrolls', l.scrollHeight > l.clientHeight + 1); }
+bindPress($('#outBtn'), () => ($('#out').classList.contains('open') ? closeOut() : openOut()));
+
+// Swipe a sheet down to dismiss it: grab the bar or the header and the sheet follows the finger.
+// Past ~90 px, or a quick downward flick, closes it; anything less springs back.
+function swipeToClose(sheet, close) {
+  let d = null;
+  sheet.addEventListener('pointerdown', (e) => {
+    if (d || !e.target.closest('.grab, .sheetHead')) return;
+    d = { id: e.pointerId, y0: e.clientY, y: e.clientY, t: performance.now(), v: 0, dy: 0 };
+  });
+  sheet.addEventListener('pointermove', (e) => {
+    if (!d || e.pointerId !== d.id) return;
+    const now = performance.now(), dt = Math.max(now - d.t, 1);
+    d.v = d.v * 0.6 + ((e.clientY - d.y) / dt) * 0.4;
+    d.y = e.clientY; d.t = now;
+    d.dy = Math.max(0, d.y - d.y0);
+    if (d.dy > 4) {
+      sheet.classList.add('dragging');
+      // Follow the finger, with a little resistance if pulled up past the top.
+      sheet.style.transform = `translateY(${d.dy}px)`;
+    }
+  });
+  const end = (e) => {
+    if (!d || e.pointerId !== d.id) return;
+    const { dy, v } = d;
+    d = null;
+    sheet.classList.remove('dragging');
+    sheet.style.transform = '';
+    if (dy > 90 || (dy > 20 && v > 0.6)) close();
+  };
+  sheet.addEventListener('pointerup', end);
+  sheet.addEventListener('pointercancel', end);
+}
+swipeToClose($('#out'), closeOut);
+swipeToClose($('#kb'), closeKb);
+bindTap($('#outx'), closeOut);
+
+// ---- Trackpad (one thumb) ----
+// Drag = move the circle on the TV (with acceleration). Tap = click under the circle.
+// The ridged strip on the right edge scrolls the page, and keeps gliding after you let go.
+const tp = $('#tp'), edge = $('#edge'), ridges = $('#ridges'), hedge = $('#hedge'), hridges = $('#hridges');
+// A thumb tap often wanders: anything under TAP_TRAVEL px and TAP_MS ms is a click. The cursor
+// doesn't move until the gesture can no longer be a tap (or it has clearly started a slow drag),
+// so tapping never nudges the circle off what you aimed at.
+const TAP_TRAVEL = 18, TAP_MS = 350, DEAD = 6, SLOW_START_MS = 200;
+// Pointer acceleration on a smoothed speed (phone CSS px per ms): slow = about 1 TV px per
+// phone px for precision, a flick = ~7.5x so a 4-5 cm swipe crosses the 1920 px TV.
+const GAIN_MIN = 1.0, GAIN_MAX = 7.5, V_SLOW = 0.1, V_FAST = 1.5;
+function gainFor(v) {
+  const t = Math.min(1, Math.max(0, (v - V_SLOW) / (V_FAST - V_SLOW)));
+  return GAIN_MIN + (GAIN_MAX - GAIN_MIN) * t * t * (3 - 2 * t);
+}
+const SCROLL_CAP = 120;
+let g = null, acc = { dx: 0, dy: 0, sx: 0, sy: 0 }, raf = 0, coast = 0, ridgeOff = 0, hridgeOff = 0;
+
+// At most ~40 messages a second: a 120 Hz screen would otherwise send ~120 tiny packets a
+// second, and some routers' flood protection kills a connection that does that.
+let lastFlush = 0;
+function queue() { if (!raf) raf = setTimeout(flush, Math.max(0, 16 - (performance.now() - lastFlush))); }
+function flush() {
+  raf = 0;
+  lastFlush = performance.now();
+  // Whole pixels go out; sub-pixel remainders stay for next time. Scrolls are capped per
+  // message so one big flick arrives as a smooth run instead of a single jump.
+  const cap = (v) => Math.max(-SCROLL_CAP, Math.min(SCROLL_CAP, Math.round(v)));
+  const dx = Math.round(acc.dx), dy = Math.round(acc.dy), sx = cap(acc.sx), sy = cap(acc.sy);
+  if (dx || dy) send({ t: 'move', dx, dy });
+  if (sy) send({ t: 'scroll', dx: 0, dy: sy });
+  if (sx) send({ t: 'scroll', dx: sx, dy: 0 });
+  acc = { dx: acc.dx - dx, dy: acc.dy - dy, sx: acc.sx - sx, sy: acc.sy - sy };
+  if (Math.abs(acc.sx) >= 1 || Math.abs(acc.sy) >= 1) queue();
+}
+function glowAt(x, y) {
+  const r = tp.getBoundingClientRect(), el = document.createElement('div');
+  el.className = 'touch';
+  el.style.left = x - r.left + 'px'; el.style.top = y - r.top + 'px';
+  tp.appendChild(el);
+  el.animate([{ opacity: 0, transform: 'scale(.6)' }, { opacity: 1, transform: 'scale(1)' }], { duration: 140, easing: 'ease-out' });
+  return el;
+}
+
+tp.addEventListener('pointerdown', (e) => {
+  if (g) return; // one thumb
+  // The bottom-right corner where the two strips would meet belongs to neither: ignore it.
+  const er = edge.getBoundingClientRect(), hr = hedge.getBoundingClientRect();
+  if (e.clientX >= er.left && e.clientY >= hr.top && !e.target.closest('.strip')) return;
+  tp.setPointerCapture(e.pointerId);
+  tp.classList.add('used');
+  cancelAnimationFrame(coast);
+  const now = performance.now(), mode = e.target.closest('#edge') ? 'scroll' : e.target.closest('#hedge') ? 'hscroll' : 'move';
+  g = { id: e.pointerId, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, t0: now, t: now, dist: 0, vx: 0, vy: 0,
+        v: 0, live: false, mode, glow: mode === 'move' ? glowAt(e.clientX, e.clientY) : null };
+  acc.dx = acc.dy = 0;
+  if (mode === 'scroll') edge.classList.add('on');
+  else if (mode === 'hscroll') hedge.classList.add('on');
+  else send({ t: 'move', dx: 0, dy: 0 }); // wake the circle on the TV where it is
+});
+
+tp.addEventListener('pointermove', (e) => {
+  if (!g || e.pointerId !== g.id) return;
+  const now = performance.now(), dx = e.clientX - g.x, dy = e.clientY - g.y, dt = Math.max(now - g.t, 1);
+  g.x = e.clientX; g.y = e.clientY; g.t = now;
+  g.dist = Math.max(g.dist, Math.hypot(g.x - g.x0, g.y - g.y0));
+  if (g.mode === 'scroll') {
+    g.vy = g.vy * 0.5 + (dy / dt) * 0.5;
+    ridgeOff += dy; ridges.style.backgroundPosition = `0 ${ridgeOff}px`;
+    acc.sy -= dy * 3.2;
+    return queue();
+  }
+  if (g.mode === 'hscroll') {
+    g.vx = g.vx * 0.5 + (dx / dt) * 0.5;
+    hridgeOff += dx; hridges.style.backgroundPosition = `${hridgeOff}px 0`;
+    acc.sx -= dx * 3.2;
+    return queue();
+  }
+  const r = tp.getBoundingClientRect();
+  g.glow.style.left = g.x - r.left + 'px'; g.glow.style.top = g.y - r.top + 'px';
+  // Smoothed speed, so the gain glides instead of jumping between events.
+  g.v = g.v * 0.65 + (Math.hypot(dx, dy) / dt) * 0.35;
+  if (!g.live) {
+    // Still possibly a tap: hold the cursor still. Go live once it clearly isn't one, starting
+    // from where the finger is now (the travel so far is dropped, so nothing jumps).
+    const age = now - g.t0;
+    if (g.dist >= TAP_TRAVEL || (g.dist >= DEAD && age >= SLOW_START_MS) || age >= TAP_MS && g.dist >= DEAD) g.live = true;
+    return;
+  }
+  const gain = gainFor(g.v);
+  acc.dx += dx * gain; acc.dy += dy * gain;
+  queue();
+});
+
+function release(e) {
+  if (!g || e.pointerId !== g.id) return;
+  const dt = performance.now() - g.t0;
+  if (g.mode === 'move') {
+    const glow = g.glow;
+    glow.animate([{ opacity: 1 }, { opacity: 0, transform: 'scale(1.4)' }], { duration: 300, easing: 'ease-out' }).onfinish = () => glow.remove();
+    if (g.dist < TAP_TRAVEL && dt < TAP_MS) { acc.dx = acc.dy = 0; send({ t: 'tap' }); } // send() also gives the haptic tick
+  } else if (g.mode === 'scroll') {
+    edge.classList.remove('on');
+    let v = g.vy * 16;
+    const step = () => {
+      if (Math.abs(v) < 0.8) return;
+      ridgeOff += v; ridges.style.backgroundPosition = `0 ${ridgeOff}px`;
+      acc.sy -= v * 3.2; queue();
+      v *= 0.92;
+      coast = requestAnimationFrame(step);
+    };
+    coast = requestAnimationFrame(step);
+  } else {
+    hedge.classList.remove('on');
+    let v = g.vx * 16;
+    const step = () => {
+      if (Math.abs(v) < 0.8) return;
+      hridgeOff += v; hridges.style.backgroundPosition = `${hridgeOff}px 0`;
+      acc.sx -= v * 3.2; queue();
+      v *= 0.92;
+      coast = requestAnimationFrame(step);
+    };
+    coast = requestAnimationFrame(step);
+  }
+  g = null;
+}
+tp.addEventListener('pointerup', release);
+tp.addEventListener('contextmenu', (e) => e.preventDefault()); // a long press does nothing special
+tp.addEventListener('pointercancel', release);
+
+connect();
+</script>
+</body>
+</html>
