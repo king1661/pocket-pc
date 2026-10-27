@@ -1,6 +1,6 @@
-# sofa-so-good 🛋️
+# PocketPC 📱➜🖥️
 
-**Lounge** turns a Linux PC into a TV and your Android phone into its remote.
+**PocketPC** puts your whole PC in your pocket. Its TV app, **Lounge**, turns a Linux PC into a TV and your Android phone into its remote.
 
 Netflix, Hulu, Paramount+, Disney+ and YouTube run full screen in a kiosk Chrome window. A
 small Rust server drives it, and the phone talks to the server over Wi-Fi. You don't need a
