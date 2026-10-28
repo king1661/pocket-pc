@@ -642,7 +642,7 @@ function render(s) {
     const video = !!np.video && +np.d > 0;
     const cls = video ? 'video' + (np.paused ? ' paused' : '') : '';
     const state = np.video ? (np.paused ? 'Paused' : 'Now playing') : 'Browsing';
-    setHero({ cls, big: '', eyeIcon: icon ? `icons/${icon}.jpg` : '', eye: `${name} · ${state}`,
+    setHero({ cls, big: '', eyeIcon: icon ? `icons/${icon}.jpg` : '', eye: `${name} · ${state}${+np.h > 0 ? ` · ${np.h}p` : ''}`,
       title: cleanTitle(np.title, name), sub: np.sub || '' });
     const art = artUrl(np.art);
     setBackdrop(art, false);

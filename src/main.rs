@@ -304,6 +304,8 @@ impl App {
                 // Sideways trackpad scrolling must scroll rows, not swipe back/forward in history.
                 "--disable-features=Translate,MediaRouter,TouchpadOverscrollHistoryNavigation,OverscrollHistoryNavigation",
                 "--overscroll-history-navigation=0",
+                // Decode video on the GPU (VA-API): smooth full-screen playback, less CPU.
+                "--enable-features=AcceleratedVideoDecodeLinuxGL,AcceleratedVideoDecodeLinuxZeroCopyGL",
                 "--hide-crash-restore-bubble",
                 "--noerrdialogs",
                 "--disable-session-crashed-bubble",
@@ -844,8 +846,11 @@ async fn watch_playing(app: Arc<App>) {
         let changed = {
             let mut cur = app.np.lock().await;
             let differs = |k: &str| cur[k] != np[k];
+            if differs("h") && np["h"].as_u64().unwrap_or(0) > 0 {
+                log(&format!("playing {}x{} on {}", np["w"], np["h"], np["site"].as_str().unwrap_or("?")));
+            }
             // Progress ticks every poll; only push those to phones that can show them.
-            let c = differs("title") || differs("sub") || differs("art") || differs("paused") || differs("site")
+            let c = differs("title") || differs("sub") || differs("art") || differs("paused") || differs("site") || differs("h")
                 || (np["t"].as_f64().unwrap_or(0.0) - cur["t"].as_f64().unwrap_or(0.0)).abs() > 1.5;
             *cur = np.clone();
             c

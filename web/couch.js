@@ -114,12 +114,20 @@
     C.ringOn = false;
     if (ring) ring.style.display = 'none';
   }
+  let ringChecks = 0;
   function tick() {
     C.raf = requestAnimationFrame(() => {
       C.raf = 0;
       if (!C.ringOn) return;
       const el = C.cur;
       if (!el || !el.isConnected) return hideRing();
+      // Every ~quarter second: drop the ring once the show is playing again, or when the
+      // focused control has faded out with the rest of the player UI.
+      if (++ringChecks % 15 === 0) {
+        const v = video();
+        if (v && !v.paused && Date.now() > C.navUntil) return hideRing();
+        if (el.checkVisibility && !el.checkVisibility({ opacityProperty: true, visibilityProperty: true })) return hideRing();
+      }
       dom();
       const r = el.getBoundingClientRect(), pad = 6;
       ring.style.left = r.left - pad + 'px';
@@ -587,6 +595,22 @@
     },
     true,
   );
+
+  // Pressing Play in the player controls: get the ring out of the picture shortly after.
+  addEventListener('playing', () => (C.navUntil = Math.min(C.navUntil, Date.now() + 1500)), true);
+
+  // YouTube's "Auto" quality aims low for a TV across the room: ask for its best stream.
+  if (location.hostname.endsWith('youtube.com')) {
+    addEventListener(
+      'playing',
+      () => {
+        const p = document.getElementById('movie_player');
+        const best = p && p.getAvailableQualityLevels && p.getAvailableQualityLevels()[0];
+        if (best && best !== 'auto' && p.getPlaybackQuality() !== best) p.setPlaybackQualityRange(best, best);
+      },
+      true,
+    );
+  }
 
   // A real keyboard plugged into the PC can drive the home screen too.
   addEventListener('keydown', (e) => {
