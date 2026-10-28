@@ -19,6 +19,9 @@
       style.textContent = `
         html.__couch_nomouse, html.__couch_nomouse * { cursor: none !important; }
         html, body { overscroll-behavior-x: none !important; }
+        /* A TV has no scrollbars. */
+        * { scrollbar-width: none !important; }
+        ::-webkit-scrollbar { display: none !important; }
         #__couch_ring { position: fixed; pointer-events: none; z-index: 2147483647; display: none;
           border: 4px solid #fff; border-radius: 12px; box-sizing: border-box;
           box-shadow: 0 0 0 3px rgba(10,132,255,.95), 0 0 28px 6px rgba(10,132,255,.55);
@@ -548,6 +551,25 @@
     if (now - Math.max(S.pausedAt, S.lastInput) >= PAUSE_IDLE) S.show(true);
   }, 15000);
 
+  // Full screen for the show: the site's player box (so its controls and subtitles come
+  // along), found by climbing from the video while the parent is still the same size.
+  C.fullscreen = () => {
+    const v = video();
+    if (!v || document.fullscreenElement) return false;
+    let box = document.getElementById('movie_player');
+    if (!box || !box.contains(v)) {
+      box = v;
+      const r = v.getBoundingClientRect();
+      for (let p = v.parentElement; p && p !== document.body && p !== document.documentElement; p = p.parentElement) {
+        const q = p.getBoundingClientRect();
+        if (q.width > r.width + 8 || q.height > r.height + 8) break;
+        box = p;
+      }
+    }
+    box.requestFullscreen({ navigationUI: 'hide' }).catch(() => {});
+    return true;
+  };
+
   // Big on-screen message, e.g. "Press power again to turn off".
   let toastEl, toastTimer;
   C.toast = (msg) => {
@@ -621,4 +643,7 @@
     const r = C.cmd(k);
     if (r.act === 'click' && C.cur) C.cur.click();
   });
+
+  // Styles (hidden scrollbars, no cursor) from the start, not only after the first press.
+  if (!dom()) addEventListener('DOMContentLoaded', dom, { once: true });
 })();

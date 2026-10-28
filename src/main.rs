@@ -1044,6 +1044,9 @@ async fn watch_playing(app: Arc<App>) {
     let mut last_shot: HashMap<String, Instant> = HashMap::new();
     let mut observer: Option<(Cdp, String)> = None;
     let mut polls = 0u32;
+    // The page we last put in full screen. Moving to the next episode loads a new page,
+    // which always drops full screen; leaving it on purpose (Back) keeps it off for that page.
+    let mut fs_url = String::new();
     loop {
         tokio::time::sleep(Duration::from_secs(2)).await;
         if !app.tv_running().await {
@@ -1111,6 +1114,20 @@ async fn watch_playing(app: Arc<App>) {
         };
         if changed && app.phones.load(Ordering::Relaxed) > 0 {
             app.publish(None).await;
+        }
+        let url = np["url"].as_str().unwrap_or("");
+        if np["video"] == true && np["paused"] == false && np["fs"] == false && !url.is_empty() && url != fs_url {
+            fs_url = url.to_string();
+            let ok = obs
+                .call(
+                    "Runtime.evaluate",
+                    json!({ "expression": "window.__couch && __couch.fullscreen()", "userGesture": true, "returnByValue": true }),
+                )
+                .await;
+            if ok.is_err() {
+                observer = None;
+                continue;
+            }
         }
         if !playing::worth_keeping(&np) {
             continue;

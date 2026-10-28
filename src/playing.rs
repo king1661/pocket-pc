@@ -44,7 +44,8 @@ pub const PROBE: &str = r#"(() => {
   const art = m && m.artwork && m.artwork.length ? m.artwork[m.artwork.length - 1].src : meta('og:image');
   return { home: false, site: host, url: location.href, title: title.slice(0, 120), sub: sub.slice(0, 120),
            art: art || '', t: v ? v.currentTime : 0, d: v && isFinite(v.duration) ? v.duration : 0,
-           paused: v ? v.paused : true, video: !!v, w: v ? v.videoWidth : 0, h: v ? v.videoHeight : 0 };
+           paused: v ? v.paused : true, video: !!v, w: v ? v.videoWidth : 0, h: v ? v.videoHeight : 0,
+           fs: !!document.fullscreenElement };
 })()"#;
 
 #[derive(Clone, Serialize, Deserialize, Default)]
