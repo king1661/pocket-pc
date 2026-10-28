@@ -37,6 +37,8 @@ streaming stick, a cable or a TV OS.
   each press so a press is never lost or doubled.
 - **Fast app switching.** One app tab stays open and is frozen while hidden, so going back to
   it is instant and RAM stays low.
+- **Ad blocking.** uBlock Origin Lite is installed into the TV browser automatically and kept up
+  to date. It's switched off on the paid services so it can't break their players.
 - **Quiet Chrome.** No "Restore pages?", no save-password or notification prompts, and no
   swipe-to-go-back.
 
@@ -87,6 +89,7 @@ the TV or by typing the code shown there. The remote also works in a phone brows
 | Watch history | `~/.local/share/couchtv/recent.json` |
 | Screensaver photos (any `.jpg`) | `~/.local/share/couchtv/saver/` |
 | Log | `~/.local/state/couchtv/couchtv.log` |
+| Ad blocker (uBlock Origin Lite) | `~/.local/share/couchtv/ublock/` |
 
 ## Notes
 

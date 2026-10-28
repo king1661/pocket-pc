@@ -34,6 +34,7 @@ use tokio::{
 };
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, tungstenite::Message as CdpMsg};
 
+mod adblock;
 mod outputs;
 mod playing;
 
@@ -148,6 +149,16 @@ impl Cdp {
 }
 
 /// The TV browser's tabs (pages only), newest first.
+/// Install (or refresh) uBlock Origin Lite in the TV browser.
+async fn load_adblock(port: u16) -> Result<()> {
+    let path = adblock::ensure().await?;
+    let v: Value = http_json(port, "/json/version").await?;
+    let url = v["webSocketDebuggerUrl"].as_str().context("no browser endpoint")?;
+    let mut cdp = Cdp::connect(url).await?;
+    cdp.call("Extensions.loadUnpacked", json!({ "path": path })).await?;
+    Ok(())
+}
+
 async fn pages(port: u16) -> Result<Vec<Value>> {
     let targets: Vec<Value> = http_json(port, "/json/list").await?;
     Ok(targets
@@ -314,6 +325,8 @@ impl App {
                 "--disable-notifications",
                 "--disable-sync",
                 "--disable-search-engine-choice-screen",
+                // Lets us install the ad blocker over DevTools (see adblock.rs).
+                "--enable-unsafe-extension-debugging",
             ]);
         if self.headless {
             cmd.args(["--headless=new", "--window-size=1920,1080"]).arg(self.home_url());
@@ -334,6 +347,12 @@ impl App {
                 let first = pages(self.cdp_port).await.ok().and_then(|p| p.first()?["id"].as_str().map(String::from));
                 *self.home_tab.lock().await = first.clone();
                 *self.active.lock().await = first;
+                let port = self.cdp_port;
+                tokio::spawn(async move {
+                    if let Err(e) = load_adblock(port).await {
+                        log(&format!("ad blocker: {e:#}"));
+                    }
+                });
                 if let (Some(pid), Some(screen), false) = (pid, outputs::saved_screen(), self.headless) {
                     // The window appears a moment after DevTools is up; place it twice to be sure.
                     tokio::spawn(async move {
