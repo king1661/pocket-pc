@@ -208,6 +208,29 @@
     return { act: 'none' };
   }
 
+  // Seek. Many players (Paramount+, Hulu, Disney+...) ignore arrow keys, so move the video
+  // directly. Netflix is the exception: it errors if its video is moved behind its back,
+  // but handles the arrow keys itself.
+  const SEEK_S = 10;
+  const clock = (t) => {
+    t = Math.max(0, Math.floor(t));
+    const h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), sec = String(t % 60).padStart(2, '0');
+    return h ? `${h}:${String(m).padStart(2, '0')}:${sec}` : `${m}:${sec}`;
+  };
+  let seekTo = null, seekTimer;
+  function seek(v, by) {
+    if (location.hostname.endsWith('netflix.com')) return { act: 'key', key: by < 0 ? 'ArrowLeft' : 'ArrowRight' };
+    // Quick repeated presses add up from where the last one was heading.
+    const from = seekTo !== null ? seekTo : v.currentTime;
+    const end = isFinite(v.duration) ? v.duration - 1 : Infinity;
+    seekTo = Math.min(end, Math.max(0, from + by));
+    v.currentTime = seekTo;
+    clearTimeout(seekTimer);
+    seekTimer = setTimeout(() => (seekTo = null), 1200);
+    C.toast(`${by < 0 ? '\u23EA' : '\u23E9'}  ${clock(seekTo)}${isFinite(v.duration) ? ' / ' + clock(v.duration) : ''}`, 1500);
+    return { act: 'none' };
+  }
+
   C.cmd = (k) => {
     dom();
     // A remote press while the screensaver is up only dismisses it.
@@ -226,7 +249,7 @@
       res = first(candidates(), false);
     } else if (arrows[k]) {
       if (playing && (k === 'left' || k === 'right')) {
-        res = { act: 'key', key: k === 'left' ? 'ArrowLeft' : 'ArrowRight' };
+        res = seek(v, k === 'left' ? -SEEK_S : SEEK_S);
       } else if (playing) {
         // Up/down while watching: bring up the player controls, then navigate them.
         C.navUntil = Date.now() + PLAYER_NAV_MS;
@@ -264,7 +287,7 @@
       if (v) {
         C.navUntil = 0;
         if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
-        res = { act: 'key', key: k === 'playpause' ? 'Space' : k === 'rew' ? 'ArrowLeft' : 'ArrowRight' };
+        res = k === 'playpause' ? { act: 'key', key: 'Space' } : seek(v, k === 'rew' ? -SEEK_S : SEEK_S);
       }
     } else if (k === 'fullscreen') {
       res = { act: 'key', key: 'f' };
@@ -572,7 +595,7 @@
 
   // Big on-screen message, e.g. "Press power again to turn off".
   let toastEl, toastTimer;
-  C.toast = (msg) => {
+  C.toast = (msg, ms = 3500) => {
     if (!document.body) return;
     if (!toastEl) {
       toastEl = document.createElement('div');
@@ -589,7 +612,7 @@
     toastEl.textContent = msg;
     requestAnimationFrame(() => (toastEl.style.opacity = '1'));
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => (toastEl.style.opacity = '0'), 3500);
+    toastTimer = setTimeout(() => (toastEl.style.opacity = '0'), ms);
   };
 
   // Show a cursor dot when the phone touchpad moves the (otherwise invisible) pointer.

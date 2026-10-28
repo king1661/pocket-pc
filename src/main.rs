@@ -363,6 +363,24 @@ impl App {
         Err(last_err.unwrap())
     }
 
+    /// The server restarted while the TV stayed open (updates don't close the show):
+    /// work out which tab is home and which app is on screen.
+    async fn adopt_tv(&self) {
+        let Ok(pages) = pages(self.cdp_port).await else { return };
+        let home = self.home_url();
+        let id_of = |t: &Value| t["id"].as_str().map(String::from);
+        let home_tab = pages.iter().find(|t| t["url"].as_str().is_some_and(|u| u.starts_with(&home))).and_then(id_of);
+        let app_tab = pages.iter().find_map(|t| {
+            let url = t["url"].as_str()?;
+            let key = service_key(&url_host(url)).filter(|_| url.starts_with("https://"))?;
+            Some((key.to_string(), id_of(t)?))
+        });
+        *self.active.lock().await = app_tab.as_ref().map(|(_, id)| id.clone()).or(home_tab.clone());
+        *self.home_tab.lock().await = home_tab;
+        *self.app_tabs.lock().await = app_tab.into_iter().collect();
+        log("picked up the TV that was already open");
+    }
+
     async fn tv_running(&self) -> bool {
         http_json::<Value>(self.cdp_port, "/json/version")
             .await
@@ -1947,7 +1965,9 @@ async fn run() -> Result<()> {
     }
     println!("{APP_NAME} remote: scan the QR (here or on the TV) or open {remote_url}");
 
-    if !flag("--no-launch") {
+    if app.tv_running().await {
+        app.adopt_tv().await;
+    } else if !flag("--no-launch") {
         app.start_tv().await?;
     }
 
@@ -1977,7 +1997,8 @@ async fn run() -> Result<()> {
     tokio::select! {
         r = server => r?,
         _ = tokio::signal::ctrl_c() => app.stop_tv().await,
-        _ = term.recv() => app.stop_tv().await,
+        // A service restart (an update) leaves the show running; the next server adopts it.
+        _ = term.recv() => if app.headless { app.stop_tv().await },
     }
     Ok(())
 }
