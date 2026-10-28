@@ -122,13 +122,12 @@
     transition: opacity .2s, transform .3s var(--ease); }
   .tools { display: flex; align-items: center; gap: .8rem; height: 6.5rem; margin-bottom: 2.6rem; padding-left: 2.5rem; position: relative; }
   .tools::before { content: ""; position: absolute; left: 0; top: 1.2rem; bottom: 1.2rem; width: 1px; background: rgba(255,255,255,.16); }
-  body.empty .tools { height: 8.5rem; }
-
   /* Empty: bigger icons, no Continue watching. */
   body.empty .hero { padding-bottom: 4rem; }
-  body.empty .app, body.empty .app .ic { width: 8.5rem; }
-  body.empty .app .ic { height: 8.5rem; }
-  body.empty .apps { gap: 2.5rem; }
+  body.empty .app, body.empty .app .ic { width: 7.2rem; }
+  body.empty .app .ic { height: 7.2rem; }
+  body.empty .apps { gap: 1.6rem; }
+  body.empty .tools { height: 7.2rem; }
 
   /* ---------- Focus: scale up, crisp white ring, soft shadow ---------- */
   .card:focus, .app:focus .ic { transform: scale(1.08); outline: 3px solid #fff; outline-offset: 4px;
@@ -247,16 +246,19 @@
     return e;
   };
 
-  // The five services: host suffix, name, icon, home page.
+  // Host suffix, name, icon, home page. A remembered link has to match one of these.
   const SERVICES = [
     ['netflix.com', 'Netflix', '/icons/netflix.jpg', 'https://www.netflix.com/browse'],
     ['hulu.com', 'Hulu', '/icons/hulu.jpg', 'https://www.hulu.com/hub/home'],
     ['paramountplus.com', 'Paramount+', '/icons/paramount.jpg', 'https://www.paramountplus.com/home/'],
     ['disneyplus.com', 'Disney+', '/icons/disney.jpg', 'https://www.disneyplus.com/home'],
     ['youtube.com', 'YouTube', '/icons/youtube.jpg', 'https://www.youtube.com/'],
+    ['tubitv.com', 'Tubi', '/icons/tubi.jpg', 'https://tubitv.com/'],
+    ['pluto.tv', 'Pluto TV', '/icons/pluto.jpg', 'https://pluto.tv/on-demand'],
+    ['plex.tv', 'Plex', '/icons/plex.jpg', 'https://watch.plex.tv/'],
   ].map(([host, name, icon, home]) => ({ host, name, icon, home }));
   const svcFor = (host) => SERVICES.find((s) => host === s.host || host.endsWith('.' + s.host));
-  // A link we're willing to open: https on one of the five services.
+  // A link we're willing to open: https on one of the services.
   function safeUrl(u) {
     try {
       const x = new URL(u);

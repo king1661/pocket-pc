@@ -101,8 +101,8 @@
   #banner a { margin-left: auto; color: #000; background: #fff; padding: 7px 14px; border-radius: 999px; font-weight: 600; text-decoration: none; white-space: nowrap; }
 
   /* ---- Apps ---- */
-  #svc { flex: none; display: flex; justify-content: space-between; }
-  #svc button { position: relative; width: min(15.5vw, 60px); aspect-ratio: 1; border-radius: 23%; background: var(--g2);
+  #svc { flex: none; display: flex; justify-content: space-between; gap: 8px; }
+  #svc button { position: relative; width: auto; flex: 1 1 0; max-width: 60px; min-width: 0; aspect-ratio: 1; border-radius: 23%; background: var(--g2);
     box-shadow: 0 0 0 .5px rgba(255,255,255,.14), 0 8px 18px rgba(0,0,0,.55); }
   #svc button img { display: block; width: 100%; height: 100%; object-fit: cover; pointer-events: none; border-radius: inherit; }
   #svc button::after { content: ""; position: absolute; left: 50%; bottom: -9px; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%;
@@ -273,12 +273,12 @@
     #title { font-size: 26px; } #title.m { font-size: 23px; } #title.s { font-size: 19px; }
     #hero.lockup #title { font-size: 30px; }
     #hero.lockup #big { width: 40px; height: 40px; margin-bottom: 10px; border-radius: 10px; }
-    #svc button { width: min(15vw, 56px); }
+    #svc button { max-width: 56px; }
   }
   @media (max-height: 700px) {
     :root { --heroH: 168px; --playH: 48px; --cross: min(calc(100vw - 2 * var(--side) - 48px), 190px); }
     body { gap: 9px; }
-    #svc button { width: min(13vw, 48px); }
+    #svc button { max-width: 48px; }
     #hero.lockup #big { display: none; }
     #tp { min-height: 100px; }
   }
@@ -314,6 +314,9 @@
   <button data-open="paramount" aria-label="Paramount+"><img src="icons/paramount.jpg" alt=""></button>
   <button data-open="disney" aria-label="Disney+"><img src="icons/disney.jpg" alt=""></button>
   <button data-open="youtube" aria-label="YouTube"><img src="icons/youtube.jpg" alt=""></button>
+  <button data-open="tubi" aria-label="Tubi"><img src="icons/tubi.jpg" alt=""></button>
+  <button data-open="pluto" aria-label="Pluto TV"><img src="icons/pluto.jpg" alt=""></button>
+  <button data-open="plex" aria-label="Plex"><img src="icons/plex.jpg" alt=""></button>
 </div>
 
 <section id="ctl">
@@ -527,9 +530,17 @@ function resendUnacked(sock) {
 const sites = {
   home: ['Home', null], 'netflix.com': ['Netflix', 'netflix'], 'hulu.com': ['Hulu', 'hulu'],
   'paramountplus.com': ['Paramount+', 'paramount'], 'disneyplus.com': ['Disney+', 'disney'],
-  'youtube.com': ['YouTube', 'youtube'],
+  'youtube.com': ['YouTube', 'youtube'], 'tubitv.com': ['Tubi', 'tubi'],
+  'pluto.tv': ['Pluto TV', 'pluto'], 'plex.tv': ['Plex', 'plex'],
 };
-const BRAND = { netflix: '#E50914', hulu: '#1CE783', paramount: '#0064FF', disney: '#1A3FBF', youtube: '#FF0000' };
+function siteInfo(host) {
+  if (!host) return ['Lounge', null];
+  if (host === 'home') return sites.home;
+  if (sites[host]) return sites[host];
+  const key = Object.keys(sites).find((h) => h !== 'home' && (host === h || host.endsWith('.' + h)));
+  return (key && sites[key]) || [host, null];
+}
+const BRAND = { netflix: '#E50914', hulu: '#1CE783', paramount: '#0064FF', disney: '#1A3FBF', youtube: '#FF0000', tubi: '#7B2BBE', pluto: '#F5C518', plex: '#E5A00D' };
 const TV_GLYPH = '<svg viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="13" rx="2.5"/><path d="M8 20.5h8"/></svg>';
 
 // ---- Hero backdrop: two layers that cross-fade when the artwork changes ----
@@ -627,7 +638,7 @@ function render(s) {
   build = s.build || build;
   lastStatus = s;
   tvOn = !!s.tv;
-  const [name, icon] = sites[s.site] || [s.site || 'Lounge', null];
+  const [name, icon] = siteInfo(s.site);
   const np = s.tv ? s.np : null;
   const brand = (icon && BRAND[icon]) || null;
   document.documentElement.style.setProperty('--brand', brand || '#6E6E73');

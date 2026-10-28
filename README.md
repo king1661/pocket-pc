@@ -2,7 +2,7 @@
 
 **PocketPC** puts your whole PC in your pocket. Its TV app, **Lounge**, turns a Linux PC into a TV and your Android phone into its remote.
 
-Netflix, Hulu, Paramount+, Disney+ and YouTube run full screen in a kiosk Chrome window. A
+Netflix, Hulu, Paramount+, Disney+, YouTube, Tubi, Pluto TV and Plex run full screen in a kiosk Chrome window. A
 small Rust server drives it, and the phone talks to the server over Wi-Fi. You don't need a
 streaming stick, a cable or a TV OS.
 
@@ -38,7 +38,8 @@ streaming stick, a cable or a TV OS.
 - **Fast app switching.** One app tab stays open and is frozen while hidden, so going back to
   it is instant and RAM stays low.
 - **Ad blocking.** uBlock Origin Lite is installed into the TV browser automatically and kept up
-  to date. It's switched off on the paid services so it can't break their players.
+  to date. It's switched off on the streaming apps whose players break when an ad request is
+  blocked (the paid ones, plus Tubi, Pluto TV and Plex).
 - **Quiet Chrome.** No "Restore pages?", no save-password or notification prompts, and no
   swipe-to-go-back.
 

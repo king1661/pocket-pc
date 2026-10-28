@@ -15,7 +15,10 @@ pub struct Sink {
 
 /// Audio outputs from PipeWire, with names people recognise.
 pub async fn sinks() -> Result<Vec<Sink>> {
-    let out = Command::new("pw-dump").output().await.context("pw-dump not found")?;
+    let out = Command::new("pw-dump")
+        .output()
+        .await
+        .context("pw-dump not found")?;
     let nodes: Vec<Value> = serde_json::from_slice(&out.stdout).context("pw-dump output")?;
     let default = default_sink().await;
     let mut sinks: Vec<Sink> = nodes
@@ -27,7 +30,11 @@ pub async fn sinks() -> Result<Vec<Sink>> {
             }
             let id = o["id"].as_u64()? as u32;
             let desc = p["node.description"].as_str().unwrap_or("Speakers");
-            Some(Sink { id, name: friendly_sink(desc), default: Some(id) == default })
+            Some(Sink {
+                id,
+                name: friendly_sink(desc),
+                default: Some(id) == default,
+            })
         })
         .collect();
     sinks.sort_by(|a, b| a.name.cmp(&b.name));
@@ -50,13 +57,28 @@ fn friendly_sink(desc: &str) -> String {
 }
 
 async fn default_sink() -> Option<u32> {
-    let out = Command::new("wpctl").args(["inspect", "@DEFAULT_AUDIO_SINK@"]).output().await.ok()?;
+    let out = Command::new("wpctl")
+        .args(["inspect", "@DEFAULT_AUDIO_SINK@"])
+        .output()
+        .await
+        .ok()?;
     let text = String::from_utf8_lossy(&out.stdout);
-    text.lines().next()?.strip_prefix("id ")?.split(',').next()?.trim().parse().ok()
+    text.lines()
+        .next()?
+        .strip_prefix("id ")?
+        .split(',')
+        .next()?
+        .trim()
+        .parse()
+        .ok()
 }
 
 pub async fn set_sink(id: u32) -> Result<()> {
-    let ok = Command::new("wpctl").args(["set-default", &id.to_string()]).status().await?.success();
+    let ok = Command::new("wpctl")
+        .args(["set-default", &id.to_string()])
+        .status()
+        .await?
+        .success();
     if !ok {
         bail!("couldn't switch the sound output");
     }
@@ -71,7 +93,11 @@ pub struct Screen {
 
 /// Enabled monitors, left to right, labelled with their model when the EDID has one.
 pub async fn screens() -> Result<Vec<Screen>> {
-    let out = Command::new("kscreen-doctor").arg("-j").output().await.context("kscreen-doctor not found")?;
+    let out = Command::new("kscreen-doctor")
+        .arg("-j")
+        .output()
+        .await
+        .context("kscreen-doctor not found")?;
     let v: Value = serde_json::from_slice(&out.stdout).context("kscreen-doctor output")?;
     let mut list: Vec<(i64, Screen)> = v["outputs"]
         .as_array()
@@ -82,7 +108,13 @@ pub async fn screens() -> Result<Vec<Screen>> {
             let name = o["name"].as_str()?.to_string();
             let (w, h) = (o["size"]["width"].as_i64()?, o["size"]["height"].as_i64()?);
             let model = edid_model(&name).unwrap_or_else(|| name.clone());
-            Some((o["pos"]["x"].as_i64().unwrap_or(0), Screen { label: format!("{model} · {w}×{h}"), name }))
+            Some((
+                o["pos"]["x"].as_i64().unwrap_or(0),
+                Screen {
+                    label: format!("{model} · {w}×{h}"),
+                    name,
+                },
+            ))
         })
         .collect();
     list.sort_by_key(|(x, _)| *x);
@@ -102,7 +134,11 @@ fn edid_model(connector: &str) -> Option<String> {
         for off in [54, 72, 90, 108] {
             let d = edid.get(off..off + 18)?;
             if d[0] == 0 && d[1] == 0 && d[3] == 0xFC {
-                let name: String = d[5..].iter().take_while(|&&b| b != b'\n').map(|&b| b as char).collect();
+                let name: String = d[5..]
+                    .iter()
+                    .take_while(|&&b| b != b'\n')
+                    .map(|&b| b as char)
+                    .collect();
                 let name = name.trim().to_string();
                 if !name.is_empty() {
                     return Some(name);
@@ -134,7 +170,10 @@ pub fn save_screen(name: &str) -> Result<()> {
 /// Move the TV browser's window (found by process id) to a screen and keep it full screen.
 /// Wayland doesn't let apps place their own windows, so ask KWin to do it.
 pub async fn move_to_screen(pid: u32, screen: &str) -> Result<()> {
-    if !screen.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+    if !screen
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-')
+    {
         bail!("bad screen name");
     }
     let script = format!(

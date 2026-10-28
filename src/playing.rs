@@ -1,7 +1,11 @@
 //! What's on: polls the TV tab for the playing title, artwork and progress, and keeps a
 //! short "continue watching" list (with a captured frame when the site has no artwork).
 
-use std::{collections::hash_map::DefaultHasher, hash::{Hash, Hasher}, path::PathBuf};
+use std::{
+    collections::hash_map::DefaultHasher,
+    hash::{Hash, Hasher},
+    path::PathBuf,
+};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -34,7 +38,7 @@ pub const PROBE: &str = r#"(() => {
   }
   if (!title) title = meta('og:title') || document.title;
   // Page titles like "Watch South Park Season 8 Episode 11: Quest for Ratings - Paramount+".
-  title = title.replace(/^Watch /, '').replace(/\s+[-|–]\s+(Paramount\+|Hulu|Netflix|Disney\+|YouTube)[^]*$/i, '');
+  title = title.replace(/^Watch /, '').replace(/\s+[-|–]\s+(Paramount\+|Hulu|Netflix|Disney\+|YouTube|Tubi|Pluto TV|Plex)[^]*$/i, '');
   const ep = title.match(/^(.*?),?\s+Season (\d+),? Episode (\d+):?\s*(.*)$/i);
   if (ep) { title = ep[1]; sub = sub || ['S' + ep[2], 'E' + ep[3], ep[4]].filter(Boolean).join(' · '); }
   const art = m && m.artwork && m.artwork.length ? m.artwork[m.artwork.length - 1].src : meta('og:image');
@@ -63,11 +67,16 @@ fn data_dir() -> PathBuf {
 }
 
 pub fn art_path(key: &str) -> Option<PathBuf> {
-    key.chars().all(|c| c.is_ascii_alphanumeric()).then(|| data_dir().join("art").join(format!("{key}.jpg")))
+    key.chars()
+        .all(|c| c.is_ascii_alphanumeric())
+        .then(|| data_dir().join("art").join(format!("{key}.jpg")))
 }
 
 pub fn load() -> Vec<Recent> {
-    std::fs::read(data_dir().join("recent.json")).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
+    std::fs::read(data_dir().join("recent.json"))
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .unwrap_or_default()
 }
 
 pub fn save(list: &[Recent]) {
@@ -93,7 +102,10 @@ pub fn worth_keeping(np: &Value) -> bool {
 }
 
 pub fn now() -> u64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 /// Fold the latest reading into the list (newest first, at most 12).
@@ -102,20 +114,29 @@ pub fn remember(list: &mut Vec<Recent>, np: &Value) -> String {
     let key = key_for(&s("site"), &s("title"));
     let old = list
         .iter()
-        .position(|r| r.key == key || (r.site == s("site") && r.title.eq_ignore_ascii_case(&s("title"))))
+        .position(|r| {
+            r.key == key || (r.site == s("site") && r.title.eq_ignore_ascii_case(&s("title")))
+        })
         .map(|i| list.remove(i));
-    let art = if !s("art").is_empty() { s("art") } else { old.as_ref().map(|o| o.art.clone()).unwrap_or_default() };
-    list.insert(0, Recent {
-        key: key.clone(),
-        site: s("site"),
-        title: s("title"),
-        sub: s("sub"),
-        url: s("url"),
-        art,
-        t: np["t"].as_f64().unwrap_or(0.0),
-        d: np["d"].as_f64().unwrap_or(0.0),
-        at: now(),
-    });
+    let art = if !s("art").is_empty() {
+        s("art")
+    } else {
+        old.as_ref().map(|o| o.art.clone()).unwrap_or_default()
+    };
+    list.insert(
+        0,
+        Recent {
+            key: key.clone(),
+            site: s("site"),
+            title: s("title"),
+            sub: s("sub"),
+            url: s("url"),
+            art,
+            t: np["t"].as_f64().unwrap_or(0.0),
+            d: np["d"].as_f64().unwrap_or(0.0),
+            at: now(),
+        },
+    );
     list.truncate(12);
     key
 }

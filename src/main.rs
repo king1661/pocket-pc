@@ -55,7 +55,43 @@ const SERVICES: &[(&str, &str)] = &[
     ("paramount", "https://www.paramountplus.com/home/"),
     ("disney", "https://www.disneyplus.com/home"),
     ("youtube", "https://www.youtube.com/"),
+    // Free, legal, ad-supported. Useful for judging picture quality on a long stream.
+    ("tubi", "https://tubitv.com/"),
+    ("pluto", "https://pluto.tv/on-demand"),
+    ("plex", "https://watch.plex.tv/"),
 ];
+
+/// Host suffix for each service, so subdomains (watch.plex.tv) count as that app.
+const SERVICE_HOSTS: &[(&str, &str)] = &[
+    ("netflix.com", "netflix"),
+    ("hulu.com", "hulu"),
+    ("paramountplus.com", "paramount"),
+    ("disneyplus.com", "disney"),
+    ("youtube.com", "youtube"),
+    ("tubitv.com", "tubi"),
+    ("pluto.tv", "pluto"),
+    ("plex.tv", "plex"),
+];
+
+fn url_host(url: &str) -> String {
+    url.split('/')
+        .nth(2)
+        .unwrap_or("")
+        .trim_start_matches("www.")
+        .to_ascii_lowercase()
+}
+
+fn service_key(host: &str) -> Option<&'static str> {
+    SERVICE_HOSTS
+        .iter()
+        .find(|(suffix, _)| {
+            host == *suffix
+                || host
+                    .strip_suffix(suffix)
+                    .is_some_and(|rest| rest.ends_with('.'))
+        })
+        .map(|(_, key)| *key)
+}
 
 const HELP: &str = "\
 couchtv - use this computer as a TV with your phone as the remote
@@ -88,8 +124,11 @@ impl Cdp {
     async fn connect_page(port: u16, want: Option<&str>) -> Result<(Self, String)> {
         let (id, url) = pick_page(port, want).await?;
         let mut cdp = Self::connect(&url).await?;
-        cdp.call("Page.addScriptToEvaluateOnNewDocument", json!({ "source": COUCH_JS }))
-            .await?;
+        cdp.call(
+            "Page.addScriptToEvaluateOnNewDocument",
+            json!({ "source": COUCH_JS }),
+        )
+        .await?;
         // Page events let us see alert()/confirm()/"leave site?" dialogs, which would
         // otherwise freeze every command until someone clicks them with a mouse.
         cdp.call("Page.enable", json!({})).await?;
@@ -104,10 +143,17 @@ impl Cdp {
     }
 
     async fn connect(url: &str) -> Result<Self> {
-        let (ws, _) = tokio::time::timeout(Duration::from_secs(3), tokio_tungstenite::connect_async(url))
-            .await
-            .context("TV browser didn't accept the connection")??;
-        Ok(Self { ws, id: 0, stale: false })
+        let (ws, _) = tokio::time::timeout(
+            Duration::from_secs(3),
+            tokio_tungstenite::connect_async(url),
+        )
+        .await
+        .context("TV browser didn't accept the connection")??;
+        Ok(Self {
+            ws,
+            id: 0,
+            stale: false,
+        })
     }
 
     async fn call(&mut self, method: &str, params: Value) -> Result<Value> {
@@ -134,7 +180,9 @@ impl Cdp {
                 self.id += 1;
                 let dismiss = json!({ "id": self.id, "method": "Page.handleJavaScriptDialog",
                                       "params": { "accept": true } });
-                self.ws.send(CdpMsg::Text(dismiss.to_string().into())).await?;
+                self.ws
+                    .send(CdpMsg::Text(dismiss.to_string().into()))
+                    .await?;
                 continue;
             }
             if v["id"].as_u64() != Some(id) {
@@ -153,9 +201,12 @@ impl Cdp {
 async fn load_adblock(port: u16) -> Result<()> {
     let path = adblock::ensure().await?;
     let v: Value = http_json(port, "/json/version").await?;
-    let url = v["webSocketDebuggerUrl"].as_str().context("no browser endpoint")?;
+    let url = v["webSocketDebuggerUrl"]
+        .as_str()
+        .context("no browser endpoint")?;
     let mut cdp = Cdp::connect(url).await?;
-    cdp.call("Extensions.loadUnpacked", json!({ "path": path })).await?;
+    cdp.call("Extensions.loadUnpacked", json!({ "path": path }))
+        .await?;
     Ok(())
 }
 
@@ -163,7 +214,9 @@ async fn pages(port: u16) -> Result<Vec<Value>> {
     let targets: Vec<Value> = http_json(port, "/json/list").await?;
     Ok(targets
         .into_iter()
-        .filter(|t| t["type"] == "page" && !t["url"].as_str().unwrap_or("").starts_with("devtools://"))
+        .filter(|t| {
+            t["type"] == "page" && !t["url"].as_str().unwrap_or("").starts_with("devtools://")
+        })
         .collect())
 }
 
@@ -173,21 +226,38 @@ async fn pick_page(port: u16, want: Option<&str>) -> Result<(String, String)> {
         .and_then(|w| pages.iter().find(|t| t["id"] == w))
         .or(pages.first())
         .context("TV browser has no open page")?;
-    let ws = page["webSocketDebuggerUrl"].as_str().context("tab is already being debugged")?;
-    Ok((page["id"].as_str().unwrap_or_default().to_string(), ws.to_string()))
+    let ws = page["webSocketDebuggerUrl"]
+        .as_str()
+        .context("tab is already being debugged")?;
+    Ok((
+        page["id"].as_str().unwrap_or_default().to_string(),
+        ws.to_string(),
+    ))
 }
 
 /// DevTools HTTP endpoints that change tabs (Chrome requires PUT for these).
 async fn devtools_put(port: u16, path: &str) -> Result<Value> {
-    let client = reqwest::Client::builder().timeout(Duration::from_secs(3)).build()?;
-    let res = client.put(format!("http://127.0.0.1:{port}{path}")).send().await?;
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(3))
+        .build()?;
+    let res = client
+        .put(format!("http://127.0.0.1:{port}{path}"))
+        .send()
+        .await?;
     let text = res.text().await?;
     Ok(serde_json::from_str(&text).unwrap_or(Value::String(text)))
 }
 
 async fn http_json<T: serde::de::DeserializeOwned>(port: u16, path: &str) -> Result<T> {
-    let client = reqwest::Client::builder().timeout(Duration::from_millis(800)).build()?;
-    Ok(client.get(format!("http://127.0.0.1:{port}{path}")).send().await?.json().await?)
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_millis(800))
+        .build()?;
+    Ok(client
+        .get(format!("http://127.0.0.1:{port}{path}"))
+        .send()
+        .await?
+        .json()
+        .await?)
 }
 
 struct App {
@@ -265,7 +335,10 @@ impl App {
                 *guard = None;
                 let known = self.known_tabs().await;
                 if let Ok(pages) = pages(self.cdp_port).await
-                    && let Some(new) = pages.iter().filter_map(|t| t["id"].as_str()).find(|id| !known.iter().any(|k| k == id))
+                    && let Some(new) = pages
+                        .iter()
+                        .filter_map(|t| t["id"].as_str())
+                        .find(|id| !known.iter().any(|k| k == id))
                 {
                     *self.active.lock().await = Some(new.to_string());
                 }
@@ -291,7 +364,9 @@ impl App {
     }
 
     async fn tv_running(&self) -> bool {
-        http_json::<Value>(self.cdp_port, "/json/version").await.is_ok()
+        http_json::<Value>(self.cdp_port, "/json/version")
+            .await
+            .is_ok()
     }
 
     async fn start_tv(&self) -> Result<()> {
@@ -300,7 +375,11 @@ impl App {
         }
         let profile = dirs::data_dir()
             .context("no data dir")?
-            .join(if self.headless { "couchtv/chrome-test" } else { "couchtv/chrome" });
+            .join(if self.headless {
+                "couchtv/chrome-test"
+            } else {
+                "couchtv/chrome"
+            });
         std::fs::create_dir_all(&profile)?;
         close_stale_browser(&profile).await;
         quiet_profile(&profile);
@@ -329,7 +408,8 @@ impl App {
                 "--enable-unsafe-extension-debugging",
             ]);
         if self.headless {
-            cmd.args(["--headless=new", "--window-size=1920,1080"]).arg(self.home_url());
+            cmd.args(["--headless=new", "--window-size=1920,1080"])
+                .arg(self.home_url());
         } else {
             // Plain kiosk (not --app) so apps can live in their own background tabs.
             cmd.arg("--kiosk").arg(self.home_url());
@@ -344,7 +424,10 @@ impl App {
         self.app_tabs.lock().await.clear();
         for _ in 0..50 {
             if self.tv_running().await {
-                let first = pages(self.cdp_port).await.ok().and_then(|p| p.first()?["id"].as_str().map(String::from));
+                let first = pages(self.cdp_port)
+                    .await
+                    .ok()
+                    .and_then(|p| p.first()?["id"].as_str().map(String::from));
                 *self.home_tab.lock().await = first.clone();
                 *self.active.lock().await = first;
                 let port = self.cdp_port;
@@ -353,7 +436,9 @@ impl App {
                         log(&format!("ad blocker: {e:#}"));
                     }
                 });
-                if let (Some(pid), Some(screen), false) = (pid, outputs::saved_screen(), self.headless) {
+                if let (Some(pid), Some(screen), false) =
+                    (pid, outputs::saved_screen(), self.headless)
+                {
                     // The window appears a moment after DevTools is up; place it twice to be sure.
                     tokio::spawn(async move {
                         for wait in [700, 1800] {
@@ -383,21 +468,32 @@ impl App {
             let _ = browser.call("Browser.close", json!({})).await;
         }
         if let Some(mut child) = self.chrome.lock().await.take() {
-            if tokio::time::timeout(Duration::from_secs(5), child.wait()).await.is_err() {
+            if tokio::time::timeout(Duration::from_secs(5), child.wait())
+                .await
+                .is_err()
+            {
                 let _ = child.kill().await;
             }
         }
     }
 
     async fn known_tabs(&self) -> Vec<String> {
-        let mut ids: Vec<String> = self.app_tabs.lock().await.iter().map(|(_, id)| id.clone()).collect();
+        let mut ids: Vec<String> = self
+            .app_tabs
+            .lock()
+            .await
+            .iter()
+            .map(|(_, id)| id.clone())
+            .collect();
         ids.extend(self.home_tab.lock().await.clone());
         ids.extend(self.active.lock().await.clone());
         ids
     }
 
     async fn tab_alive(&self, id: &str) -> bool {
-        pages(self.cdp_port).await.is_ok_and(|p| p.iter().any(|t| t["id"] == id))
+        pages(self.cdp_port)
+            .await
+            .is_ok_and(|p| p.iter().any(|t| t["id"] == id))
     }
 
     /// Put another tab on screen: pause whatever plays in the current one, bring the
@@ -417,7 +513,9 @@ impl App {
         devtools_put(self.cdp_port, &format!("/json/activate/{id}")).await?;
         *self.cdp.lock().await = None;
         *self.active.lock().await = Some(id.to_string());
-        let _ = self.cdp("Page.setWebLifecycleState", json!({ "state": "active" })).await;
+        let _ = self
+            .cdp("Page.setWebLifecycleState", json!({ "state": "active" }))
+            .await;
         *self.last.lock().await = json!({ "mode": "nav", "site": site, "input": false });
         Ok(())
     }
@@ -426,10 +524,25 @@ impl App {
     /// it), else open a new tab with a loading screen and load it there. `deep` is a link
     /// inside the app (e.g. a show to resume).
     async fn open_app(&self, key: &str, deep: Option<&str>) -> Result<()> {
-        let home = SERVICES.iter().find(|(id, _)| *id == key).context("unknown service")?.1;
-        let site = home.split('/').nth(2).unwrap_or("").trim_start_matches("www.").to_string();
+        let home = SERVICES
+            .iter()
+            .find(|(id, _)| *id == key)
+            .context("unknown service")?
+            .1;
+        let site = home
+            .split('/')
+            .nth(2)
+            .unwrap_or("")
+            .trim_start_matches("www.")
+            .to_string();
         self.start_tv().await?;
-        let existing = self.app_tabs.lock().await.iter().find(|(k, _)| k == key).map(|(_, id)| id.clone());
+        let existing = self
+            .app_tabs
+            .lock()
+            .await
+            .iter()
+            .find(|(k, _)| k == key)
+            .map(|(_, id)| id.clone());
         if let Some(id) = existing {
             if self.tab_alive(&id).await {
                 let already_here = self.active.lock().await.as_deref() == Some(id.as_str());
@@ -448,14 +561,21 @@ impl App {
         }
         let splash = format!("http://127.0.0.1:{}/splash?s={key}", self.port);
         let tab = devtools_put(self.cdp_port, &format!("/json/new?{splash}")).await?;
-        let id = tab["id"].as_str().context("couldn't open a tab")?.to_string();
+        let id = tab["id"]
+            .as_str()
+            .context("couldn't open a tab")?
+            .to_string();
         self.show_tab(&id, &site).await?;
         let evict = {
             let mut tabs = self.app_tabs.lock().await;
             tabs.push((key.to_string(), id));
             // Keep only the latest app open (instant Home -> back, little memory): opening a
             // different app closes the previous one.
-            if tabs.len() > 1 { Some(tabs.remove(0).1) } else { None }
+            if tabs.len() > 1 {
+                Some(tabs.remove(0).1)
+            } else {
+                None
+            }
         };
         if let Some(old) = evict {
             let _ = devtools_put(self.cdp_port, &format!("/json/close/{old}")).await;
@@ -474,18 +594,16 @@ impl App {
         // The home tab is gone (e.g. it was navigated away): make the current tab home.
         let cur = self.active.lock().await.clone();
         *self.home_tab.lock().await = cur.clone();
-        self.app_tabs.lock().await.retain(|(_, id)| Some(id) != cur.as_ref());
+        self.app_tabs
+            .lock()
+            .await
+            .retain(|(_, id)| Some(id) != cur.as_ref());
         self.navigate(&self.home_url()).await
     }
 
     /// A streaming link from the TV home screen or Continue watching: open it in its app's tab.
     async fn open_link(&self, url: &str) -> Result<()> {
-        let host = url.split('/').nth(2).unwrap_or("").trim_start_matches("www.").to_string();
-        let key = SERVICES
-            .iter()
-            .find(|(_, u)| u.split('/').nth(2).unwrap_or("").trim_start_matches("www.") == host)
-            .map(|(k, _)| *k);
-        let Some(key) = key.filter(|_| url.starts_with("https://")) else {
+        let Some(key) = service_key(&url_host(url)).filter(|_| url.starts_with("https://")) else {
             bail!("not a streaming service link");
         };
         let is_home = SERVICES.iter().any(|(k, u)| *k == key && *u == url);
@@ -498,7 +616,11 @@ impl App {
         let site = if url == self.home_url() {
             "home".to_string()
         } else {
-            url.split('/').nth(2).unwrap_or("").trim_start_matches("www.").to_string()
+            url.split('/')
+                .nth(2)
+                .unwrap_or("")
+                .trim_start_matches("www.")
+                .to_string()
         };
         *self.last.lock().await = json!({ "mode": "nav", "site": site, "input": false });
         Ok(())
@@ -540,7 +662,10 @@ impl App {
             )
             .await?;
         if let Some(ex) = res.get("exceptionDetails") {
-            bail!("page script: {}", ex["exception"]["description"].as_str().unwrap_or("error"));
+            bail!(
+                "page script: {}",
+                ex["exception"]["description"].as_str().unwrap_or("error")
+            );
         }
         let v = res["result"]["value"].clone();
         if let (Some(w), Some(h)) = (v["vw"].as_f64(), v["vh"].as_f64()) {
@@ -584,8 +709,11 @@ impl App {
 
     async fn mouse_to(&self, x: f64, y: f64) -> Result<()> {
         *self.mouse.lock().await = (x, y);
-        self.cdp("Input.dispatchMouseEvent", json!({ "type": "mouseMoved", "x": x, "y": y }))
-            .await?;
+        self.cdp(
+            "Input.dispatchMouseEvent",
+            json!({ "type": "mouseMoved", "x": x, "y": y }),
+        )
+        .await?;
         Ok(())
     }
 
@@ -644,13 +772,18 @@ impl App {
 
     async fn toast(&self, msg: &str) -> Result<()> {
         let expr = format!("{COUCH_JS}\n;window.__couch.toast({})", json!(msg));
-        self.cdp("Runtime.evaluate", json!({ "expression": expr })).await?;
+        self.cdp("Runtime.evaluate", json!({ "expression": expr }))
+            .await?;
         Ok(())
     }
 
     async fn publish(&self, err: Option<String>) {
         let last = self.last.lock().await.clone();
-        let armed = self.power_armed.lock().await.is_some_and(|t| t.elapsed() < POWER_CONFIRM);
+        let armed = self
+            .power_armed
+            .lock()
+            .await
+            .is_some_and(|t| t.elapsed() < POWER_CONFIRM);
         let msg = json!({
             "build": self.build,
             "armed": armed,
@@ -675,7 +808,8 @@ async fn handle(app: &App, v: &Value) -> Result<()> {
         "open" => app.open_app(&s("s"), None).await?,
         "home" => app.go_home().await?,
         "text" => {
-            app.cdp("Input.insertText", json!({ "text": s("v") })).await?;
+            app.cdp("Input.insertText", json!({ "text": s("v") }))
+                .await?;
         }
         "key" => app.press(&s("k")).await?,
         "vol" => {
@@ -687,7 +821,10 @@ async fn handle(app: &App, v: &Value) -> Result<()> {
             let (w, h) = *app.view.lock().await;
             let (x, y) = {
                 let mut c = app.cursor.lock().await;
-                *c = ((c.0 + n("dx")).clamp(0.0, w - 1.0), (c.1 + n("dy")).clamp(0.0, h - 1.0));
+                *c = (
+                    (c.0 + n("dx")).clamp(0.0, w - 1.0),
+                    (c.1 + n("dy")).clamp(0.0, h - 1.0),
+                );
                 *c
             };
             app.mouse_to(x, y).await?;
@@ -711,7 +848,13 @@ async fn handle(app: &App, v: &Value) -> Result<()> {
         "power" => app.power().await?,
         // Continue watching: reopen a remembered title (only on the known services).
         "resume" => {
-            let url = app.recent.lock().await.iter().find(|r| r.key == s("key")).map(|r| r.url.clone());
+            let url = app
+                .recent
+                .lock()
+                .await
+                .iter()
+                .find(|r| r.key == s("key"))
+                .map(|r| r.url.clone());
             let url = url.context("that title isn't in Continue watching any more")?;
             app.open_link(&url).await?;
         }
@@ -727,13 +870,20 @@ async fn set_volume(dir: &str) -> Result<()> {
         "mute" => &["set-mute", "@DEFAULT_AUDIO_SINK@", "toggle"],
         _ => bail!("unknown volume action"),
     };
-    Command::new("wpctl").args(args).status().await.context("wpctl not found")?;
+    Command::new("wpctl")
+        .args(args)
+        .status()
+        .await
+        .context("wpctl not found")?;
     Ok(())
 }
 
 /// "Volume: 0.45 [MUTED]" -> "45% muted"
 async fn get_volume() -> String {
-    let Ok(out) = Command::new("wpctl").args(["get-volume", "@DEFAULT_AUDIO_SINK@"]).output().await
+    let Ok(out) = Command::new("wpctl")
+        .args(["get-volume", "@DEFAULT_AUDIO_SINK@"])
+        .output()
+        .await
     else {
         return String::new();
     };
@@ -744,7 +894,11 @@ async fn get_volume() -> String {
         .and_then(|v| v.parse::<f64>().ok())
         .map(|v| format!("{:.0}%", v * 100.0))
         .unwrap_or_default();
-    if text.contains("MUTED") { format!("{pct} muted") } else { pct }
+    if text.contains("MUTED") {
+        format!("{pct} muted")
+    } else {
+        pct
+    }
 }
 
 /// Turn off the TV browser's own bubbles before it starts: "Restore pages?" after an
@@ -752,7 +906,10 @@ async fn get_volume() -> String {
 /// permission prompts. Chrome must not be running (it rewrites this file on exit).
 fn quiet_profile(profile: &std::path::Path) {
     let path = profile.join("Default/Preferences");
-    let mut prefs: Value = std::fs::read(&path).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or(json!({}));
+    let mut prefs: Value = std::fs::read(&path)
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .unwrap_or(json!({}));
     let set = |prefs: &mut Value, keys: &[&str], val: Value| {
         let mut cur = prefs;
         for k in &keys[..keys.len() - 1] {
@@ -766,15 +923,42 @@ fn quiet_profile(profile: &std::path::Path) {
     set(&mut prefs, &["profile", "exit_type"], json!("Normal"));
     set(&mut prefs, &["profile", "exited_cleanly"], json!(true));
     set(&mut prefs, &["credentials_enable_service"], json!(false));
-    set(&mut prefs, &["profile", "password_manager_enabled"], json!(false));
+    set(
+        &mut prefs,
+        &["profile", "password_manager_enabled"],
+        json!(false),
+    );
     set(&mut prefs, &["autofill", "profile_enabled"], json!(false));
-    set(&mut prefs, &["autofill", "credit_card_enabled"], json!(false));
+    set(
+        &mut prefs,
+        &["autofill", "credit_card_enabled"],
+        json!(false),
+    );
     set(&mut prefs, &["signin", "allowed"], json!(false));
-    set(&mut prefs, &["browser", "check_default_browser"], json!(false));
+    set(
+        &mut prefs,
+        &["browser", "check_default_browser"],
+        json!(false),
+    );
     set(&mut prefs, &["translate", "enabled"], json!(false));
-    set(&mut prefs, &["download", "prompt_for_download"], json!(false));
-    for perm in ["notifications", "geolocation", "media_stream_camera", "media_stream_mic", "local_network_access", "clipboard"] {
-        set(&mut prefs, &["profile", "default_content_setting_values", perm], json!(2));
+    set(
+        &mut prefs,
+        &["download", "prompt_for_download"],
+        json!(false),
+    );
+    for perm in [
+        "notifications",
+        "geolocation",
+        "media_stream_camera",
+        "media_stream_mic",
+        "local_network_access",
+        "clipboard",
+    ] {
+        set(
+            &mut prefs,
+            &["profile", "default_content_setting_values", perm],
+            json!(2),
+        );
     }
     let _ = std::fs::create_dir_all(path.parent().unwrap());
     if let Ok(b) = serde_json::to_vec(&prefs) {
@@ -785,8 +969,14 @@ fn quiet_profile(profile: &std::path::Path) {
 /// A browser left over from an earlier run (e.g. CouchTV was killed) still owns the
 /// profile; a new launch would just hand off to it and exit. Close it first.
 async fn close_stale_browser(profile: &std::path::Path) {
-    let Ok(target) = std::fs::read_link(profile.join("SingletonLock")) else { return };
-    let Some(pid) = target.to_string_lossy().rsplit('-').next().and_then(|p| p.parse::<u32>().ok())
+    let Ok(target) = std::fs::read_link(profile.join("SingletonLock")) else {
+        return;
+    };
+    let Some(pid) = target
+        .to_string_lossy()
+        .rsplit('-')
+        .next()
+        .and_then(|p| p.parse::<u32>().ok())
     else {
         return;
     };
@@ -802,28 +992,47 @@ async fn close_stale_browser(profile: &std::path::Path) {
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
-    let _ = Command::new("kill").args(["-9", &pid.to_string()]).status().await;
+    let _ = Command::new("kill")
+        .args(["-9", &pid.to_string()])
+        .status()
+        .await;
 }
 
 /// Launched from the app menu there is no terminal, so surface errors as a notification.
 fn notify(msg: &str) {
-    let _ = std::process::Command::new("notify-send").args(["-a", APP_NAME, APP_NAME, msg]).status();
+    let _ = std::process::Command::new("notify-send")
+        .args(["-a", APP_NAME, APP_NAME, msg])
+        .status();
 }
 
 /// Append to ~/.local/state/couchtv/couchtv.log (kept short) and stderr, so a freeze
 /// can be looked into afterwards even when started from the app menu.
 fn log(line: &str) {
     use std::io::Write;
-    let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-    let stamp = format!("{:02}:{:02}:{:02}", secs / 3600 % 24, secs / 60 % 60, secs % 60);
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let stamp = format!(
+        "{:02}:{:02}:{:02}",
+        secs / 3600 % 24,
+        secs / 60 % 60,
+        secs % 60
+    );
     eprintln!("[{stamp} UTC] {line}");
-    let Some(dir) = dirs::state_dir().map(|d| d.join("couchtv")) else { return };
+    let Some(dir) = dirs::state_dir().map(|d| d.join("couchtv")) else {
+        return;
+    };
     let _ = std::fs::create_dir_all(&dir);
     let path = dir.join("couchtv.log");
     if std::fs::metadata(&path).is_ok_and(|m| m.len() > 512 * 1024) {
         let _ = std::fs::rename(&path, dir.join("couchtv.log.old"));
     }
-    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+    {
         let _ = writeln!(f, "[{stamp} UTC] {line}");
     }
 }
@@ -848,28 +1057,54 @@ async fn watch_playing(app: Arc<App>) {
             observer = None;
         }
         let want = app.active.lock().await.clone();
-        if observer.as_ref().is_some_and(|(_, id)| Some(id) != want.as_ref()) {
+        if observer
+            .as_ref()
+            .is_some_and(|(_, id)| Some(id) != want.as_ref())
+        {
             observer = None;
         }
         if observer.is_none() {
-            observer = Cdp::connect_observer(app.cdp_port, want.as_deref()).await.ok();
+            observer = Cdp::connect_observer(app.cdp_port, want.as_deref())
+                .await
+                .ok();
         }
-        let Some((obs, _)) = observer.as_mut() else { continue };
-        let Ok(res) = obs.call("Runtime.evaluate", json!({ "expression": playing::PROBE, "returnByValue": true })).await
+        let Some((obs, _)) = observer.as_mut() else {
+            continue;
+        };
+        let Ok(res) = obs
+            .call(
+                "Runtime.evaluate",
+                json!({ "expression": playing::PROBE, "returnByValue": true }),
+            )
+            .await
         else {
             observer = None;
             continue;
         };
         let v = res["result"]["value"].clone();
-        let np = if v["home"] == true || v.is_null() { Value::Null } else { v };
+        let np = if v["home"] == true || v.is_null() {
+            Value::Null
+        } else {
+            v
+        };
         let changed = {
             let mut cur = app.np.lock().await;
             let differs = |k: &str| cur[k] != np[k];
             if differs("h") && np["h"].as_u64().unwrap_or(0) > 0 {
-                log(&format!("playing {}x{} on {}", np["w"], np["h"], np["site"].as_str().unwrap_or("?")));
+                log(&format!(
+                    "playing {}x{} on {}",
+                    np["w"],
+                    np["h"],
+                    np["site"].as_str().unwrap_or("?")
+                ));
             }
             // Progress ticks every poll; only push those to phones that can show them.
-            let c = differs("title") || differs("sub") || differs("art") || differs("paused") || differs("site") || differs("h")
+            let c = differs("title")
+                || differs("sub")
+                || differs("art")
+                || differs("paused")
+                || differs("site")
+                || differs("h")
                 || (np["t"].as_f64().unwrap_or(0.0) - cur["t"].as_f64().unwrap_or(0.0)).abs() > 1.5;
             *cur = np.clone();
             c
@@ -883,7 +1118,12 @@ async fn watch_playing(app: Arc<App>) {
         let key = playing::remember(&mut *app.recent.lock().await, &np);
         let playing_now = np["paused"] == false;
         let needs_art = np["art"].as_str().unwrap_or("").is_empty();
-        if needs_art && playing_now && last_shot.get(&key).is_none_or(|t| t.elapsed() > Duration::from_secs(90)) {
+        if needs_art
+            && playing_now
+            && last_shot
+                .get(&key)
+                .is_none_or(|t| t.elapsed() > Duration::from_secs(90))
+        {
             last_shot.insert(key.clone(), Instant::now());
             let (w, h) = *app.view.lock().await;
             let shot = obs
@@ -893,7 +1133,11 @@ async fn watch_playing(app: Arc<App>) {
                             "clip": { "x": 0, "y": 0, "width": w, "height": h, "scale": 0.5 } }),
                 )
                 .await;
-            let jpeg = shot.ok().and_then(|v| base64::engine::general_purpose::STANDARD.decode(v["data"].as_str()?).ok());
+            let jpeg = shot.ok().and_then(|v| {
+                base64::engine::general_purpose::STANDARD
+                    .decode(v["data"].as_str()?)
+                    .ok()
+            });
             if let (Some(jpeg), Some(path)) = (jpeg, playing::art_path(&key))
                 && !playing::mostly_black(&jpeg)
             {
@@ -943,9 +1187,17 @@ async fn splash(Query(q): Query<HashMap<String, String>>) -> Response {
         "paramount" => ("Paramount+", "paramount"),
         "disney" => ("Disney+", "disney"),
         "youtube" => ("YouTube", "youtube"),
+        "tubi" => ("Tubi", "tubi"),
+        "pluto" => ("Pluto TV", "pluto"),
+        "plex" => ("Plex", "plex"),
         _ => ("", ""),
     };
-    Html(SPLASH_HTML.replace("{{NAME}}", name).replace("{{ICON}}", icon)).into_response()
+    Html(
+        SPLASH_HTML
+            .replace("{{NAME}}", name)
+            .replace("{{ICON}}", icon),
+    )
+    .into_response()
 }
 
 /// Captured frames for Continue watching. The TV reads them directly; phones pass the token.
@@ -962,7 +1214,14 @@ async fn art(
         return StatusCode::NOT_FOUND.into_response();
     };
     match tokio::fs::read(path).await {
-        Ok(b) => ([(header::CONTENT_TYPE, "image/jpeg"), (header::CACHE_CONTROL, "max-age=300")], b).into_response(),
+        Ok(b) => (
+            [
+                (header::CONTENT_TYPE, "image/jpeg"),
+                (header::CACHE_CONTROL, "max-age=300"),
+            ],
+            b,
+        )
+            .into_response(),
         Err(_) => StatusCode::NOT_FOUND.into_response(),
     }
 }
@@ -980,7 +1239,9 @@ async fn saver_list() -> Response {
         .map(|e| e.file_name().to_string_lossy().to_string())
         .filter(|n| {
             let l = n.to_lowercase();
-            [".jpg", ".jpeg", ".png", ".webp"].iter().any(|x| l.ends_with(x))
+            [".jpg", ".jpeg", ".png", ".webp"]
+                .iter()
+                .any(|x| l.ends_with(x))
         })
         .collect();
     names.sort();
@@ -998,7 +1259,14 @@ async fn saver_photo(axum::extract::Path(name): axum::extract::Path<String>) -> 
         _ => "image/jpeg",
     };
     match tokio::fs::read(saver_dir().join(&name)).await {
-        Ok(b) => ([(header::CONTENT_TYPE, kind), (header::CACHE_CONTROL, "max-age=86400")], b).into_response(),
+        Ok(b) => (
+            [
+                (header::CONTENT_TYPE, kind),
+                (header::CACHE_CONTROL, "max-age=86400"),
+            ],
+            b,
+        )
+            .into_response(),
         Err(_) => StatusCode::NOT_FOUND.into_response(),
     }
 }
@@ -1006,8 +1274,17 @@ async fn saver_photo(axum::extract::Path(name): axum::extract::Path<String>) -> 
 /// Send the screen and sound choices to one phone.
 async fn send_outputs(app: &App, to: &tokio::sync::mpsc::UnboundedSender<String>) -> Result<()> {
     let (sinks, screens) = tokio::join!(outputs::sinks(), outputs::screens());
-    let current = app.screen.lock().await.clone().or_else(outputs::saved_screen);
-    let msg = outputs::to_json(&sinks.unwrap_or_default(), &screens.unwrap_or_default(), current.as_deref());
+    let current = app
+        .screen
+        .lock()
+        .await
+        .clone()
+        .or_else(outputs::saved_screen);
+    let msg = outputs::to_json(
+        &sinks.unwrap_or_default(),
+        &screens.unwrap_or_default(),
+        current.as_deref(),
+    );
     let _ = to.send(msg.to_string());
     Ok(())
 }
@@ -1034,7 +1311,13 @@ fn find_browser() -> Result<PathBuf> {
         return Ok(p.into());
     }
     let path = std::env::var("PATH").unwrap_or_default();
-    for name in ["google-chrome-stable", "google-chrome", "chromium-browser", "chromium", "brave-browser"] {
+    for name in [
+        "google-chrome-stable",
+        "google-chrome",
+        "chromium-browser",
+        "chromium",
+        "brave-browser",
+    ] {
         for dir in path.split(':') {
             let p = PathBuf::from(dir).join(name);
             if p.is_file() {
@@ -1046,14 +1329,20 @@ fn find_browser() -> Result<PathBuf> {
 }
 
 fn load_token() -> Result<String> {
-    let path = dirs::config_dir().context("no config dir")?.join("couchtv/token");
+    let path = dirs::config_dir()
+        .context("no config dir")?
+        .join("couchtv/token");
     if let Ok(t) = std::fs::read_to_string(&path)
         && t.trim().len() >= 16
     {
         return Ok(t.trim().to_string());
     }
     use rand::{Rng, distr::Alphanumeric};
-    let token: String = rand::rng().sample_iter(&Alphanumeric).take(24).map(char::from).collect();
+    let token: String = rand::rng()
+        .sample_iter(&Alphanumeric)
+        .take(24)
+        .map(char::from)
+        .collect();
     std::fs::create_dir_all(path.parent().unwrap())?;
     std::fs::write(&path, &token)?;
     Ok(token)
@@ -1062,10 +1351,17 @@ fn load_token() -> Result<String> {
 fn qr_svg(data: &str) -> String {
     use qrcode::{QrCode, render::svg};
     let svg = QrCode::new(data.as_bytes())
-        .map(|c| c.render::<svg::Color>().quiet_zone(false).min_dimensions(240, 240).build())
+        .map(|c| {
+            c.render::<svg::Color>()
+                .quiet_zone(false)
+                .min_dimensions(240, 240)
+                .build()
+        })
         .unwrap_or_default();
     // Drop the XML prolog so it can sit inline in HTML.
-    svg.find("<svg").map(|i| svg[i..].to_string()).unwrap_or(svg)
+    svg.find("<svg")
+        .map(|i| svg[i..].to_string())
+        .unwrap_or(svg)
 }
 
 fn install(autostart: bool) -> Result<()> {
@@ -1076,7 +1372,9 @@ fn install(autostart: bool) -> Result<()> {
     if exe != bin {
         std::fs::copy(&exe, &bin)?;
     }
-    let apps = dirs::data_dir().context("no data dir")?.join("applications");
+    let apps = dirs::data_dir()
+        .context("no data dir")?
+        .join("applications");
     std::fs::create_dir_all(&apps)?;
     std::fs::write(
         apps.join("couchtv.desktop"),
@@ -1086,9 +1384,14 @@ fn install(autostart: bool) -> Result<()> {
             bin.display()
         ),
     )?;
-    println!("Installed {} and added {APP_NAME} to the app menu.", bin.display());
+    println!(
+        "Installed {} and added {APP_NAME} to the app menu.",
+        bin.display()
+    );
     if autostart {
-        let dir = dirs::config_dir().context("no config dir")?.join("autostart");
+        let dir = dirs::config_dir()
+            .context("no config dir")?
+            .join("autostart");
         std::fs::create_dir_all(&dir)?;
         std::fs::write(
             dir.join("couchtv-remote.desktop"),
@@ -1098,7 +1401,9 @@ fn install(autostart: bool) -> Result<()> {
                 bin.display()
             ),
         )?;
-        println!("The remote server now starts at login (TV off until you press power on the phone).");
+        println!(
+            "The remote server now starts at login (TV off until you press power on the phone)."
+        );
     }
     Ok(())
 }
@@ -1113,10 +1418,17 @@ async fn root(ConnectInfo(addr): ConnectInfo<SocketAddr>) -> Redirect {
     Redirect::temporary(if loopback(&addr) { "/tv" } else { "/remote" })
 }
 
-async fn tv_page(State(app): State<Arc<App>>, ConnectInfo(addr): ConnectInfo<SocketAddr>) -> Response {
+async fn tv_page(
+    State(app): State<Arc<App>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+) -> Response {
     // The TV page shows the pairing QR (it contains the token), so only this computer gets it.
     if !loopback(&addr) {
-        return (StatusCode::FORBIDDEN, "The TV screen is only shown on the TV computer.").into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            "The TV screen is only shown on the TV computer.",
+        )
+            .into_response();
     }
     Html(
         TV_HTML
@@ -1127,11 +1439,18 @@ async fn tv_page(State(app): State<Arc<App>>, ConnectInfo(addr): ConnectInfo<Soc
     .into_response()
 }
 
-async fn tv_api(State(app): State<Arc<App>>, ConnectInfo(addr): ConnectInfo<SocketAddr>) -> Response {
+async fn tv_api(
+    State(app): State<Arc<App>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+) -> Response {
     if !loopback(&addr) {
         return StatusCode::FORBIDDEN.into_response();
     }
-    let armed = app.power_armed.lock().await.is_some_and(|t| t.elapsed() < POWER_CONFIRM);
+    let armed = app
+        .power_armed
+        .lock()
+        .await
+        .is_some_and(|t| t.elapsed() < POWER_CONFIRM);
     let pin = app.current_pin().await;
     let recent = app.recent.lock().await.clone();
     axum::Json(json!({ "phones": app.phones.load(Ordering::Relaxed), "armed": armed, "pin": pin, "recent": recent }))
@@ -1139,7 +1458,10 @@ async fn tv_api(State(app): State<Arc<App>>, ConnectInfo(addr): ConnectInfo<Sock
 }
 
 /// The Power tile on the TV home screen (same two-press rule as the phone).
-async fn power_api(State(app): State<Arc<App>>, ConnectInfo(addr): ConnectInfo<SocketAddr>) -> Response {
+async fn power_api(
+    State(app): State<Arc<App>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+) -> Response {
     if !loopback(&addr) {
         return StatusCode::FORBIDDEN.into_response();
     }
@@ -1152,28 +1474,45 @@ async fn power_api(State(app): State<Arc<App>>, ConnectInfo(addr): ConnectInfo<S
 }
 
 /// Pair by typing the code shown on the TV: returns the remote URL (with token).
-async fn pair_api(State(app): State<Arc<App>>, Query(q): Query<HashMap<String, String>>) -> Response {
+async fn pair_api(
+    State(app): State<Arc<App>>,
+    Query(q): Query<HashMap<String, String>>,
+) -> Response {
     {
         let mut fails = app.pin_fails.lock().await;
         if fails.1.elapsed() > Duration::from_secs(60) {
             *fails = (0, Instant::now());
         }
         if fails.0 >= 8 {
-            return (StatusCode::TOO_MANY_REQUESTS, "Too many wrong codes. Wait a minute.").into_response();
+            return (
+                StatusCode::TOO_MANY_REQUESTS,
+                "Too many wrong codes. Wait a minute.",
+            )
+                .into_response();
         }
     }
-    let given: String = q.get("pin").map(|p| p.chars().filter(char::is_ascii_digit).collect()).unwrap_or_default();
+    let given: String = q
+        .get("pin")
+        .map(|p| p.chars().filter(char::is_ascii_digit).collect())
+        .unwrap_or_default();
     if given.len() == 6 && given == app.current_pin().await {
         // One code, one phone: show a fresh code for the next pairing.
         *app.pin.lock().await = (new_pin(), Instant::now());
         return axum::Json(json!({ "url": app.remote_url })).into_response();
     }
     app.pin_fails.lock().await.0 += 1;
-    (StatusCode::UNAUTHORIZED, "That code doesn't match the one on the TV.").into_response()
+    (
+        StatusCode::UNAUTHORIZED,
+        "That code doesn't match the one on the TV.",
+    )
+        .into_response()
 }
 
 /// Opening CouchTV again from the app menu lands here: turn the TV on (never off).
-async fn on_api(State(app): State<Arc<App>>, ConnectInfo(addr): ConnectInfo<SocketAddr>) -> Response {
+async fn on_api(
+    State(app): State<Arc<App>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+) -> Response {
     if !loopback(&addr) {
         return StatusCode::FORBIDDEN.into_response();
     }
@@ -1186,13 +1525,20 @@ async fn on_api(State(app): State<Arc<App>>, ConnectInfo(addr): ConnectInfo<Sock
 }
 
 /// What the TV is showing right now (handy for debugging), local only.
-async fn screenshot(State(app): State<Arc<App>>, ConnectInfo(addr): ConnectInfo<SocketAddr>) -> Response {
+async fn screenshot(
+    State(app): State<Arc<App>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+) -> Response {
     if !loopback(&addr) {
         return StatusCode::FORBIDDEN.into_response();
     }
-    let shot = app.cdp("Page.captureScreenshot", json!({ "format": "png" })).await;
+    let shot = app
+        .cdp("Page.captureScreenshot", json!({ "format": "png" }))
+        .await;
     match shot.ok().and_then(|v| {
-        base64::engine::general_purpose::STANDARD.decode(v["data"].as_str()?).ok()
+        base64::engine::general_purpose::STANDARD
+            .decode(v["data"].as_str()?)
+            .ok()
     }) {
         Some(png) => ([(header::CONTENT_TYPE, "image/png")], png).into_response(),
         None => (StatusCode::SERVICE_UNAVAILABLE, "TV is off").into_response(),
@@ -1201,17 +1547,29 @@ async fn screenshot(State(app): State<Arc<App>>, ConnectInfo(addr): ConnectInfo<
 
 /// The Android remote app, built by `android/build.sh` into the data dir.
 async fn apk() -> Response {
-    let path = dirs::data_dir().unwrap_or_default().join("couchtv/couchtv-remote.apk");
+    let path = dirs::data_dir()
+        .unwrap_or_default()
+        .join("couchtv/couchtv-remote.apk");
     match tokio::fs::read(&path).await {
         Ok(bytes) => (
             [
-                (header::CONTENT_TYPE, "application/vnd.android.package-archive"),
-                (header::CONTENT_DISPOSITION, "attachment; filename=\"Lounge-Remote.apk\""),
+                (
+                    header::CONTENT_TYPE,
+                    "application/vnd.android.package-archive",
+                ),
+                (
+                    header::CONTENT_DISPOSITION,
+                    "attachment; filename=\"Lounge-Remote.apk\"",
+                ),
             ],
             bytes,
         )
             .into_response(),
-        Err(_) => (StatusCode::NOT_FOUND, "The Android app hasn't been built on this PC yet.").into_response(),
+        Err(_) => (
+            StatusCode::NOT_FOUND,
+            "The Android app hasn't been built on this PC yet.",
+        )
+            .into_response(),
     }
 }
 
@@ -1223,9 +1581,19 @@ async fn service_icon(axum::extract::Path(name): axum::extract::Path<String>) ->
         "paramount.jpg" => include_bytes!("../web/icons/paramount.jpg"),
         "disney.jpg" => include_bytes!("../web/icons/disney.jpg"),
         "youtube.jpg" => include_bytes!("../web/icons/youtube.jpg"),
+        "tubi.jpg" => include_bytes!("../web/icons/tubi.jpg"),
+        "pluto.jpg" => include_bytes!("../web/icons/pluto.jpg"),
+        "plex.jpg" => include_bytes!("../web/icons/plex.jpg"),
         _ => return StatusCode::NOT_FOUND.into_response(),
     };
-    ([(header::CONTENT_TYPE, "image/jpeg"), (header::CACHE_CONTROL, "max-age=86400")], bytes).into_response()
+    (
+        [
+            (header::CONTENT_TYPE, "image/jpeg"),
+            (header::CACHE_CONTROL, "max-age=86400"),
+        ],
+        bytes,
+    )
+        .into_response()
 }
 
 /// Inter for the phone remote (the TV uses the installed copy directly).
@@ -1238,13 +1606,27 @@ async fn font(axum::extract::Path(weight): axum::extract::Path<String>) -> Respo
         _ => return StatusCode::NOT_FOUND.into_response(),
     };
     match tokio::fs::read(format!("/usr/share/fonts/rsms-inter-fonts/{file}")).await {
-        Ok(b) => ([(header::CONTENT_TYPE, "font/ttf"), (header::CACHE_CONTROL, "max-age=604800")], b).into_response(),
+        Ok(b) => (
+            [
+                (header::CONTENT_TYPE, "font/ttf"),
+                (header::CACHE_CONTROL, "max-age=604800"),
+            ],
+            b,
+        )
+            .into_response(),
         Err(_) => StatusCode::NOT_FOUND.into_response(),
     }
 }
 
 fn asset(body: &'static str, kind: &'static str) -> Response {
-    ([(header::CONTENT_TYPE, kind), (header::CACHE_CONTROL, "no-cache")], body).into_response()
+    (
+        [
+            (header::CONTENT_TYPE, kind),
+            (header::CACHE_CONTROL, "no-cache"),
+        ],
+        body,
+    )
+        .into_response()
 }
 
 async fn ws_upgrade(
@@ -1260,7 +1642,9 @@ async fn ws_upgrade(
 async fn phone(app: Arc<App>, socket: WebSocket, ok: bool, peer: SocketAddr) {
     let (mut tx, mut rx) = socket.split();
     if !ok {
-        let _ = tx.send(Message::Text(json!({ "t": "denied" }).to_string().into())).await;
+        let _ = tx
+            .send(Message::Text(json!({ "t": "denied" }).to_string().into()))
+            .await;
         return;
     }
     let n = app.phones.fetch_add(1, Ordering::Relaxed) + 1;
@@ -1300,17 +1684,25 @@ async fn phone(app: Arc<App>, socket: WebSocket, ok: bool, peer: SocketAddr) {
                 }
                 Ok(None) => break,
                 Err(_) => {
-                    log(&format!("phone {peer} went silent for {} s; dropping it", PHONE_IDLE.as_secs()));
+                    log(&format!(
+                        "phone {peer} went silent for {} s; dropping it",
+                        PHONE_IDLE.as_secs()
+                    ));
                     break;
                 }
             };
             // The phone pings every second; a long gap means its messages are being held up.
             if heard.elapsed() > Duration::from_millis(2500) {
-                log(&format!("phone {peer}: nothing for {} ms", heard.elapsed().as_millis()));
+                log(&format!(
+                    "phone {peer}: nothing for {} ms",
+                    heard.elapsed().as_millis()
+                ));
             }
             heard = Instant::now();
             let Message::Text(text) = msg else { continue };
-            let Ok(v) = serde_json::from_str::<Value>(&text) else { continue };
+            let Ok(v) = serde_json::from_str::<Value>(&text) else {
+                continue;
+            };
             if v["t"] == "diag" {
                 log(&format!("phone {peer} reconnected because: {v}"));
                 continue;
@@ -1353,7 +1745,8 @@ async fn phone(app: Arc<App>, socket: WebSocket, ok: bool, peer: SocketAddr) {
                     next = Some(more);
                     break;
                 }
-                let sum = |k: &str| v[k].as_f64().unwrap_or(0.0) + more.1[k].as_f64().unwrap_or(0.0);
+                let sum =
+                    |k: &str| v[k].as_f64().unwrap_or(0.0) + more.1[k].as_f64().unwrap_or(0.0);
                 v = json!({ "t": "move", "dx": sum("dx"), "dy": sum("dy") });
             }
         }
@@ -1361,8 +1754,17 @@ async fn phone(app: Arc<App>, socket: WebSocket, ok: bool, peer: SocketAddr) {
         let quiet = matches!(kind.as_str(), "move" | "scroll");
         // If the TV was stuck, don't replay a pile of old presses once it recovers.
         let waited = at.elapsed();
-        if waited > if quiet { Duration::from_secs(1) } else { STALE_PRESS } {
-            log(&format!("dropped stale {kind} ({} ms old)", waited.as_millis()));
+        if waited
+            > if quiet {
+                Duration::from_secs(1)
+            } else {
+                STALE_PRESS
+            }
+        {
+            log(&format!(
+                "dropped stale {kind} ({} ms old)",
+                waited.as_millis()
+            ));
             continue;
         }
         let started = Instant::now();
@@ -1387,7 +1789,10 @@ async fn phone(app: Arc<App>, socket: WebSocket, ok: bool, peer: SocketAddr) {
             log(&format!(
                 "{kind} took {} ms{}",
                 took.as_millis(),
-                res.as_ref().err().map(|e| format!(": {e:#}")).unwrap_or_default()
+                res.as_ref()
+                    .err()
+                    .map(|e| format!(": {e:#}"))
+                    .unwrap_or_default()
             ));
         }
         // Trackpad moves are high-frequency; only report their failures.
@@ -1426,7 +1831,9 @@ async fn run() -> Result<()> {
     };
 
     let token = load_token()?;
-    let ip = local_ip_address::local_ip().map(|i| i.to_string()).unwrap_or_else(|_| "127.0.0.1".into());
+    let ip = local_ip_address::local_ip()
+        .map(|i| i.to_string())
+        .unwrap_or_else(|_| "127.0.0.1".into());
     let lan_addr = format!("{ip}:{port}");
     let remote_url = format!("http://{lan_addr}/remote#t={token}");
     let app = Arc::new(App {
@@ -1445,7 +1852,10 @@ async fn run() -> Result<()> {
         vol: Mutex::new(String::new()),
         phones: AtomicUsize::new(0),
         pointer_used: Mutex::new(None),
-        build: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0),
+        build: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0),
         power_armed: Mutex::new(None),
         screen: Mutex::new(None),
         np: Mutex::new(Value::Null),
@@ -1467,9 +1877,18 @@ async fn run() -> Result<()> {
         .route("/api/on", axum::routing::post(on_api))
         .route("/api/pair", get(pair_api))
         .route("/api/screenshot", get(screenshot))
-        .route("/remote", get(|| async { asset(REMOTE_HTML, "text/html; charset=utf-8") }))
-        .route("/couch.js", get(|| async { asset(COUCH_JS, "text/javascript") }))
-        .route("/manifest.json", get(|| async { asset(MANIFEST, "application/manifest+json") }))
+        .route(
+            "/remote",
+            get(|| async { asset(REMOTE_HTML, "text/html; charset=utf-8") }),
+        )
+        .route(
+            "/couch.js",
+            get(|| async { asset(COUCH_JS, "text/javascript") }),
+        )
+        .route(
+            "/manifest.json",
+            get(|| async { asset(MANIFEST, "application/manifest+json") }),
+        )
         .route("/icon.svg", get(|| async { asset(ICON, "image/svg+xml") }))
         .route("/couchtv.apk", get(apk))
         .route("/icons/{name}", get(service_icon))
@@ -1502,7 +1921,11 @@ async fn run() -> Result<()> {
 
     if let Ok(code) = qrcode::QrCode::new(remote_url.as_bytes()) {
         use qrcode::render::unicode::Dense1x2;
-        let qr = code.render::<Dense1x2>().dark_color(Dense1x2::Light).light_color(Dense1x2::Dark).build();
+        let qr = code
+            .render::<Dense1x2>()
+            .dark_color(Dense1x2::Light)
+            .light_color(Dense1x2::Dark)
+            .build();
         println!("{qr}");
     }
     println!("{APP_NAME} remote: scan the QR (here or on the TV) or open {remote_url}");
@@ -1529,7 +1952,10 @@ async fn run() -> Result<()> {
     let poller = app.clone();
     tokio::spawn(async move { watch_playing(poller).await });
 
-    let server = axum::serve(listener, router.into_make_service_with_connect_info::<SocketAddr>());
+    let server = axum::serve(
+        listener,
+        router.into_make_service_with_connect_info::<SocketAddr>(),
+    );
     let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
     tokio::select! {
         r = server => r?,
